@@ -9,11 +9,13 @@ import vec_generator as vg
 import vec_helper as vh
 import vec_manipulator as vm
 
+TEST = False
+
 def main(num_tests, plot=False):
 	#errors = dict()
-	percentages = {"actual": [], "measured": []}
+	percentages = {"generated2actual": [], "generated2measured": [], 'measured2actual': []}
 	for i in range(num_tests):
-		t = run_test_case(verbose=num_tests == 1)
+		t = run_test_case(verbose=False or TEST)#num_tests == 1)
 		if i == 0:
 			errors = t
 		else:
@@ -21,41 +23,52 @@ def main(num_tests, plot=False):
 				errors[key] += t[key]
 
 		change = (t["ga from measured; raw ga output to measured"] - t['generated to measured']) / t['generated to measured']
-		percentages["measured"].append(change)
+		percentages["generated2measured"].append(change)
 
 		change = (t["ga from measured; raw ga output to actual"] - t['generated to actual']) / t['generated to actual']
-		percentages["actual"].append(change)
+		percentages["generated2actual"].append(change)
 
-	for key in errors:
-		errors[key] /= num_tests
-		print("average", key, "error:", errors[key], end='')
-		if key != "generated to measured" and ("to measured" in key):
-			print(f" ({round(100 * (errors[key] - errors['generated to measured']) / errors['generated to measured'], 2)}% change compared to gen to measured)")
-		elif key != "generated to actual" and key != "measured to actual" and "to actual" in key:
-			print(f" ({round(100 * (errors[key] - errors['generated to actual']) / errors['generated to actual'], 2)}% change compared to gen to actual)")
-		else:
-			print()
+		change = (t["ga from measured; raw ga output to measured"] - t['measured to actual']) / t['measured to actual']
+		percentages["measured2actual"].append(change)
 
+	print('*' * 50)
+	# for key in errors:
+	# 	errors[key] /= num_tests
+	# 	print("average", key, "error:", errors[key], end='')
+	# 	if key != "generated to measured" and ("to measured" in key):
+	# 		print(f" ({round(100 * (errors[key] - errors['generated to measured']) / errors['generated to measured'], 2)}% change compared to gen to measured)")
+
+	# 	elif key != "generated to actual" and key != "measured to actual" and "to actual" in key:
+	# 		print(f" ({round(100 * (errors[key] - errors['generated to actual']) / errors['generated to actual'], 2)}% change compared to gen to actual)")
+	# 	else:
+	# 		print()
+
+
+	for key in percentages:
+		print(f'average change with respect to {key}:', np.mean(percentages[key]))
+	
 	if plot:
-		plt.hist(percentages["measured"], density=True)
+		plt.hist(percentages["generated2measured"], density=True)
 		plt.show()
-		plt.hist(percentages["actual"], density=True)
+		plt.hist(percentages["generated2actual"], density=True)
 		plt.show()
 
 def run_test_case(
 	verbose=False,
-	population_size = 5,
-	iters = 20,
-	angle_noise = .3,
-	radius_noise = .3,
+	population_size = 10,
+	iters = 10,
+	angle_noise = .4,
+	radius_noise = .4,
 	deletion_prob = .3,
 	crossover_rate = .8,
 	space_size = 10,
-	num_nodes = 4,
+	num_nodes = 30,
 	elite_proportion = .1,
-	test = False,
+	test = TEST,
 	max_angle = 60,
-	max_range = 30
+	max_range = 30,
+	noise_ratio = .6,
+	min_diffs_ratio=.2
 ):
 	errors = {}
 	true_nodes = []
@@ -85,7 +98,7 @@ def run_test_case(
 	true_vectors = vg.coords2vectors(true_nodes)
 
 	if not test:
-		measured = vg.coords2vectors(true_nodes, angle_noise=angle_noise, radius_noise=radius_noise)
+		measured = vg.coords2vectors(true_nodes, angle_noise=angle_noise, radius_noise=radius_noise, noise_ratio=noise_ratio)
 	else:
 		measured = np.array([
 			[[0, 0], [5 ,4], [9, 1], [4, -3]],
@@ -94,12 +107,30 @@ def run_test_case(
 			[[-4, 3], [-2, 8], [5, 4], [0, 0]] # M42 = [1,7]
 		], dtype=float)
 
-	filtered = vm.drop_unseen_vectors(measured, true_nodes, space_size, max_angle=max_angle, max_range=max_range)
+	filtered = vm.drop_unseen_vectors(measured, true_nodes, space_size, max_angle=max_angle, max_range=max_range, verbose=verbose)
 	generated = vg.get_generated_vectors(measured)
 	
 	errors["measured to actual"] = calculate_gen_error(measured, true_vectors)
 	errors["generated to measured"] = calculate_gen_error(generated, measured)
 	errors["generated to actual"] = calculate_gen_error(generated, true_vectors)
+	
+	best_individual, best_fitness = run_ga(
+		population_size, 
+		measured, 
+		true_vectors, 
+		elite_proportion=elite_proportion, 
+		deletion_prob=deletion_prob, 
+		iters=iters,
+		crossover_rate=crossover_rate,
+		verbose=verbose,
+		min_diffs_ratio=min_diffs_ratio
+	)
+
+	generated_best = vg.get_generated_vectors(best_individual)
+	errors["ga from measured; raw ga output to measured"] = calculate_gen_error(measured, best_individual)
+	errors["ga from measured; raw ga output to actual"] = calculate_gen_error(true_vectors, best_individual)
+	errors["ga from measured; generated ga output to measured"] = calculate_gen_error(measured, generated_best)
+	errors["ga from measured; generated ga output to actual"] = calculate_gen_error(true_vectors, generated_best)
 
 	if verbose:
 		# filtered
@@ -116,23 +147,6 @@ def run_test_case(
 		print('Generated to actual error:', errors["generated to actual"])
 		print("Initial DI:", ga.calculate_di(generated, measured))
 		print('*' * 50)
-	
-	best_individual, best_fitness = run_ga(
-		population_size, 
-		measured, 
-		true_vectors, 
-		elite_proportion=elite_proportion, 
-		deletion_prob=deletion_prob, 
-		iters=iters,
-		crossover_rate=crossover_rate,
-		verbose=verbose
-	)
-
-	generated_best = vg.get_generated_vectors(best_individual)
-	errors["ga from measured; raw ga output to measured"] = calculate_gen_error(measured, best_individual)
-	errors["ga from measured; raw ga output to actual"] = calculate_gen_error(true_vectors, best_individual)
-	errors["ga from measured; generated ga output to measured"] = calculate_gen_error(measured, generated_best)
-	errors["ga from measured; generated ga output to actual"] = calculate_gen_error(true_vectors, generated_best)
 
 	if verbose:
 		print('Input = measured')
@@ -176,10 +190,19 @@ def run_test_case(
 def calculate_gen_error(generated, measured):
 	return np.sum(np.sqrt(np.sum((np.array(generated) - np.array(measured))**2, axis=2))) / (len(generated) ** 2 - len(generated))
 
-def run_ga(population_size, measured, true_vectors, deletion_prob=.3, iters=10, elite_proportion=.1, crossover_rate=ga.DEFAULT_CROSSOVER_RATE, verbose=False):
-	population = ga.generate_population(measured, deletion_prob=deletion_prob, size=population_size)
+def run_ga(population_size, measured, true_vectors, deletion_prob=.3, iters=10, elite_proportion=.1, crossover_rate=ga.DEFAULT_CROSSOVER_RATE, verbose=False, min_diffs_ratio=.3):
+	population = ga.generate_population(measured, deletion_prob=deletion_prob, size=population_size, min_diffs_ratio=.3)
+	
+	if TEST:
+		population = [copy.deepcopy(measured) for i in range(1)]
+		for k in range(len(measured)):
+			for n in range(len(measured)):
+				if k != n and (k, n) in [(3, 2), (2, 3)]:#[(0, 1), (0, 2), (0, 3), (1, 0), (1, 2), (1, 3), (2, 0), (2, 3), (3, 0), (3, 1)]:
+					population[0][k][n] = np.nan
+
 	if len(population) == 0:
 		raise Exception('Unable to generate an initial population')
+	
 	if verbose:
 		print("Initial population:")
 		for i in population:
@@ -190,9 +213,9 @@ def run_ga(population_size, measured, true_vectors, deletion_prob=.3, iters=10, 
 
 	for i in range(iters):
 		to_print = (i == 0 or (i + 1) % 5 == 0) and verbose
-		if verbose and to_print:
+		if to_print:
 			print(f'Iteration {i + 1}:')
-		population_fitness = ga.get_population_fitness(population, verbose=to_print)
+		population_fitness = ga.get_population_fitness(population, verbose=verbose)
 
 		if best_individual is None or (population_fitness[0][1] > 0 and 1 / population_fitness[0][1] < (1 / best_fitness if best_fitness > 0 else float('inf'))):
 			best_individual = copy.deepcopy(vm.deduce_vectors(population[population_fitness[0][0]], verbose=False))
@@ -203,7 +226,8 @@ def run_ga(population_size, measured, true_vectors, deletion_prob=.3, iters=10, 
 			selection, 
 			num_elites,
 			crossover_rate=crossover_rate,
-			verbose=to_print
+			verbose=to_print,
+			min_diffs_ratio=min_diffs_ratio
 		)
 
 		if len(population) == 0:
@@ -212,5 +236,5 @@ def run_ga(population_size, measured, true_vectors, deletion_prob=.3, iters=10, 
 	return best_individual, best_fitness
 
 if __name__ == "__main__":
-	num_tests = 10
+	num_tests = 1
 	main(num_tests)

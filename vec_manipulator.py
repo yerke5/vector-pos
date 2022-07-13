@@ -29,16 +29,19 @@ def deduce_vector(i, j, measured, space_size=None, verbose=True, component_thres
 
 	components = []
 	cids = []
+	vecstrs = []
 	for path in paths:
 		#print('Trying path', path)
 		new_vector = np.array([0.0, 0.0])
 		cid = []
+		vecstr = []
 		broke = False
 		for k in range(1, len(path)): 
 			if not vh.is_missing(measured[path[k - 1]][path[k]]):
 				#print('Found', path[k - 1], '-', path[k])
 				new_vector += measured[path[k - 1]][path[k]]
 				cid.append("M" + str(path[k - 1] + 1) + str(path[k] + 1))
+				vecstr.append(str(measured[path[k - 1]][path[k]]))
 				#j += 1
 			else:
 				broke = True 
@@ -47,6 +50,7 @@ def deduce_vector(i, j, measured, space_size=None, verbose=True, component_thres
 			#print('Success! The new vector is', new_vector)
 			components.append(new_vector.copy())
 			cids.append(", ".join(cid))
+			vecstrs.append("(" + " + ".join(vecstr) + ")")
 			#print('Components:', components)
 			#print('CIDs:', cids)
 
@@ -55,7 +59,8 @@ def deduce_vector(i, j, measured, space_size=None, verbose=True, component_thres
 		return None  
 
 	if verbose:
-		print("[DEDUCED] M" + str(i + 1) + str(j + 1) + '(g):', 'sum(' + '; '.join(cids) + ') / ' + str(len(cids)))
+		#print("[DEDUCED] M" + str(i + 1) + str(j + 1) + '(g):', 'sum(' + '; '.join(cids) + ') / ' + str(len(cids)))
+		print("[DEDUCED]     M" + str(i + 1) + str(j + 1) + '(g):', ' + '.join(vecstrs) + ') / ' + str(len(cids)) + ' =', np.mean(components, axis=0))
 	
 	#print('Success! The new vector is', np.mean(components, axis=0))
 	return np.mean(components, axis=0)

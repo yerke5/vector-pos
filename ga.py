@@ -10,12 +10,12 @@ import math
 DEFAULT_MUTATION_RATE = 0.01
 DEFAULT_CROSSOVER_RATE = 0.8
 
-def generate_population(vectors, deletion_prob=.3, size=10):
+def generate_population(vectors, deletion_prob=.3, size=10, min_diffs_ratio=.3):
 	population = []
 	ids = set()
 
 	k = 0
-	while len(population) < size and k < 100:
+	while len(population) < size and k < 10:
 		temp = copy.deepcopy(vectors)
 		for i in range(len(vectors)):
 			for j in range(len(vectors)):
@@ -25,9 +25,12 @@ def generate_population(vectors, deletion_prob=.3, size=10):
 		deduced = vm.deduce_vectors(temp, verbose=False)
 		if deduced is not None:
 			curr_ids = vh.format_indices(vh.matrix2indices(temp))
+			#curr_ids = set(vh.matrix2indices(temp))
 			if curr_ids not in ids:
-				population.append(temp)
-				ids.add(curr_ids)
+				if calculate_di(vg.get_generated_vectors(temp), temp, min_diffs_ratio=min_diffs_ratio) is not None:
+					population.append(temp)
+					ids.add(curr_ids)
+					k = 0
 
 		k += 1
 
@@ -60,7 +63,7 @@ def get_population_fitness(population, verbose=False):
 		#deduced = deduce_vectors(individual)
 		if verbose:
 			print('Chromosome:', vh.format_indices(vh.matrix2indices(individual)), f'(Missing: {vh.format_indices(vh.get_missing(individual))})')
-		di = calculate_di(vg.get_generated_vectors(individual, verbose=verbose), individual) 
+		di = calculate_di(vg.get_generated_vectors(individual, verbose=verbose), individual, verbose=verbose) 
 		if di == 0:
 			population_fitness[i] = float('inf')
 		else:
@@ -80,7 +83,8 @@ def generate_offspring(
 	num_elites, 
 	mutation_rate=DEFAULT_MUTATION_RATE, 
 	crossover_rate=DEFAULT_CROSSOVER_RATE,
-	verbose=False
+	verbose=False,
+	min_diffs_ratio=.3
 ):
 	if len(selection) < 2:
 		return selection
@@ -104,7 +108,9 @@ def generate_offspring(
 
 		deduced = vm.deduce_vectors(child, verbose=False)
 		if deduced is not None:
-			offspring.append(child)
+			di = calculate_di(vg.get_generated_vectors(child), child, min_diffs_ratio=min_diffs_ratio)
+			if di is not None:
+				offspring.append(child)
 			
 		k += 1
 
@@ -163,7 +169,7 @@ def crossover(p1, p2, crossover_rate, verbose=False):
 
 	
 
-def calculate_di(generated, measured, verbose=False):
+def calculate_di(generated, measured, verbose=False, min_diffs_ratio=.3):
 	di = 0
 	generated = np.array(generated)
 	measured = np.array(measured)
@@ -178,23 +184,43 @@ def calculate_di(generated, measured, verbose=False):
 		#raise Exception('Error in calculating DI')
 	for i in range(len(generated)):
 		for j in range(len(generated)):
+			c1, c2 = "", ""
 			curr = 0
 			if i != j and not vh.is_missing(measured[i][j]):
 				curr += np.sum((measured[i][j] - generated[i][j])**2)
 				num_perms[(i, j)] = 1
 				if verbose:
-					print("M" + str(i + 1) + str(j + 1) + ": " + "sqrt(((M" + str(i + 1) + str(j + 1) + "(m) - " + "M" + str(i + 1) + str(j + 1) + "(g))**2", end='')
+					#print("M" + str(i + 1) + str(j + 1) + ": " + "sqrt(((M" + str(i + 1) + str(j + 1) + "(m) - " + "M" + str(i + 1) + str(j + 1) + "(g))**2", end='')
+					print("M" + str(i + 1) + str(j + 1) + ": " + f"sqrt(({measured[i][j]} - {generated[i][j]})**2", end="")
+
+					c1 += "M" + str(i + 1) + str(j + 1) + ": " + "sqrt(((M" + str(i + 1) + str(j + 1) + "(m) - " + "M" + str(i + 1) + str(j + 1) + "(g))**2 "
+					#c2 += "M" + str(i + 1) + str(j + 1) + ": " + f"sqrt((({measured[i][j]} - {generated[i][j]})**2 "
 				for path in paths[(i, j)]:
 					if len(path) > 2 and vh.is_valid(path, measured):
 						if verbose:
-							print(" + (M" + str(i + 1) + str(j + 1) + "(g) - " + "M" + str(i + 1) + str(j + 1) + f"(g{','.join([str(p + 1) for p in path])}))**2", end='')
-						curr += np.sum((generated[i][j] - vg.get_generated_vector(path, measured))**2)
+							#print(" + (M" + str(i + 1) + str(j + 1) + "(g) - " + "M" + str(i + 1) + str(j + 1) + f"(g{','.join([str(p + 1) for p in path])}))**2", end='')
+							print(f" + ({generated[i][j]} - (", end="")
+							c1 += " + (M" + str(i + 1) + str(j + 1) + "(g) - " + "M" + str(i + 1) + str(j + 1) + f"(g{','.join([str(p + 1) for p in path])}))**2 "
+							#c2 += f" + ({generated[i][j]} - " + f"{generated[i][j]}" + f"(g{','.join([str(p + 1) for p in path])}))**2 "
+						curr += np.sum((generated[i][j] - vg.get_generated_vector(path, measured, verbose=verbose))**2)
 						
+						if verbose:
+							print("))**2", end="")
 						num_perms[(i, j)] += 1
+
+				if num_perms[(i,j)] < max(2, int(min_diffs_ratio * (len(measured) - 1))):
+					return None
+
 				curr /= num_perms[(i, j)]
 				di += math.sqrt(curr)
 
 				if verbose:
 					print(f') / {num_perms[(i, j)]})')
+					c1 += f') / {num_perms[(i, j)]})'
+					#c2 += f') / {num_perms[(i, j)]})'
+			if c1 != "":
+				print(c1)
+				#print(c2)
+		#print(c2)
 
 	return di / num_vectors #(len(generated)**2 - len(generated))

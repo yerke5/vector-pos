@@ -4,7 +4,7 @@ import numpy as np
 MAX_K = 2
 
 def format_indices(indices):
-	return "{" + ", ".join(['M' + str(i + 1) + str(j + 1) for (i, j) in indices]) + '}'
+	return "{" + ", ".join(['M' + str(i + 1) + '-' + str(j + 1) for (i, j) in indices]) + '}'
 
 def beautify_matrix(m):
 	output = '[\n'
