@@ -4,21 +4,21 @@ import math
 import vec_helper as vh
 import vec_generator as vg
 
-def deduce_vectors(measured, verbose=False):
+def deduce_vectors(measured, paths, verbose=False, enforce_deduction=False):
 	#print('Incomplete measured:\n', measured)
 	deduced = copy.deepcopy(measured)
 	for i in range(len(measured)):
 		for j in range(len(measured)):
 			if i != j and vh.is_missing(measured[i][j]):
 				#print('Deducing', (i, j))
-				deduced[i][j] = deduce_vector(i, j, deduced, verbose=verbose)
+				deduced[i][j] = deduce_vector(i, j, deduced, paths[(i, j)], verbose=verbose)
 
-				if vh.is_missing(deduced[i][j]):
+				if enforce_deduction and vh.is_missing(deduced[i][j]):
 					return None
 	return deduced 
 
-def deduce_vector(i, j, measured, space_size=None, verbose=True, component_threshold=2):
-	paths = vh.generate_paths(len(measured), id_pairs=[(i, j)])
+def deduce_vector(i, j, measured, paths, space_size=None, verbose=True, component_threshold=2):
+	#paths = vh.generate_paths(len(measured), id_pairs=[(i, j)])
 	
 	# remove pairs
 	paths = [x for x in paths if len(x) > 2]
@@ -65,7 +65,7 @@ def deduce_vector(i, j, measured, space_size=None, verbose=True, component_thres
 	#print('Success! The new vector is', np.mean(components, axis=0))
 	return np.mean(components, axis=0)
 
-def add_noise(node, radius_noise=.2, angle_noise=.2):
+def add_noise(node, space_size, radius_noise=.2, angle_noise=.2):
 	r = math.sqrt(node[0]**2 + node[1]**2)
 	x_angle = math.acos(node[0] / r)
 	y_angle = math.asin(node[1] / r)
@@ -91,7 +91,7 @@ def drop_unseen_vectors(measured, true_nodes, space_size, max_angle=40, max_rang
 	if verbose:
 		print('Orientations:', orientations)
 	
-	true_vectors = vg.coords2vectors(true_nodes)
+	true_vectors = vg.coords2vectors(true_nodes, space_size)
 
 	for i in range(len(measured)):
 		for j in range(len(measured)):

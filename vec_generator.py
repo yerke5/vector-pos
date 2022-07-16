@@ -5,10 +5,9 @@ import numpy as np
 import vec_manipulator as vm
 import vec_helper as vh
 
-def get_generated_vectors(measured, verbose=False):
+def get_generated_vectors(measured, paths, verbose=False):
 	generated = np.zeros((len(measured), len(measured), 2))
-	paths = vh.paths2dict(vh.generate_paths(len(measured)))
-
+	
 	#print('Paths:', paths)
 	num_perms = dict()
 	strpaths = dict()
@@ -21,6 +20,8 @@ def get_generated_vectors(measured, verbose=False):
 			if not vh.is_missing(measured[path[0]][path[-1]]):
 				#print(f"Before {path[0] + 1} - {path[-1] + 1}: ", measured[path[0]][path[-1]])
 				gen = get_generated_vector(path, measured, verbose=verbose) 
+				#if len(path) == 2:
+					#print(gen)
 				if gen is not None:
 					generated[path[0]][path[-1]] += gen
 					if not (path[0], path[-1]) in num_perms:
@@ -31,14 +32,19 @@ def get_generated_vectors(measured, verbose=False):
 						strpaths[(path[0], path[-1])].append(''.join([str(p + 1) for p in path]))
 			else:
 				if (path[0], path[-1]) not in num_perms:
-					generated[path[0]][path[-1]] = vm.deduce_vector(path[0], path[-1], measured, verbose=verbose)
+					deduced = vm.deduce_vector(path[0], path[-1], measured, paths[pair], verbose=verbose)
+					if deduced is not None:
+						generated[path[0]][path[-1]] = deduced
+					else:
+						generated[path[0]][path[-1]] = np.nan
+					
 					num_perms[(path[0], path[-1])] = 1
 			#generated[path[0]][path[-1]] /= (perms + 1)
 			#print(f"After {path[0] + 1} - {path[-1] + 1}: ", generated[path[0]][path[-1]])
 			#print('-' * 50)
 
 		if not vh.is_missing(measured[path[0]][path[-1]]):
-			generated[pair[0]][pair[1]] = generated[pair[0]][pair[1]] / num_perms[pair]
+			generated[pair[0]][pair[1]] /= num_perms[pair]
 			if verbose:
 				print("/", num_perms[pair], '=', generated[pair[0]][pair[1]])
 
@@ -59,7 +65,9 @@ def get_generated_vector(path, measured, verbose=False):
 			return None 
 		#print(f"{path[i-1] + 1} - {path[i] + 1}: {measured[path[i - 1]][path[i]]}")
 		new_vector += measured[path[i - 1]][path[i]]
-		vecstr.append(f"{measured[path[i - 1]][path[i]]}")
+
+		if verbose:
+			vecstr.append(f"{measured[path[i - 1]][path[i]]}")
 	
 	if verbose:
 		print("(" + " + ".join(vecstr) + ")" + " + ", end = "")
@@ -69,7 +77,7 @@ def get_generated_vector(path, measured, verbose=False):
 def generate_random_node(size):
 	return [random.random() * size, random.random() * size]
 
-def coords2vectors(coords, angle_noise=.3, radius_noise=.3, noise_ratio=0):
+def coords2vectors(coords, space_size, angle_noise=.3, radius_noise=.3, noise_ratio=0):
 	vectors = np.zeros((len(coords), len(coords), 2))
 	noise = noise_ratio > 0
 	pairs = []
@@ -83,6 +91,14 @@ def coords2vectors(coords, angle_noise=.3, radius_noise=.3, noise_ratio=0):
 		for j in range(len(coords)):
 			vectors[i][j] = coords[j] - coords[i] 
 			if noise and (i, j) in pairs:
-				vectors[i][j] = vm.add_noise(vectors[i][j], angle_noise=angle_noise, radius_noise=radius_noise)
+				#print('Before:', coords[i], vectors[i][j])
+				#print(space_size - coords[i])
+				noisy_vector = list(vm.add_noise(vectors[i][j], space_size, angle_noise=angle_noise, radius_noise=radius_noise))
+				noisy_vector[0] = min(space_size - coords[i][0], noisy_vector[0])
+				noisy_vector[1] = min(space_size - coords[i][1], noisy_vector[1])
+				noisy_vector[0] = max(-coords[i][0], noisy_vector[0])
+				noisy_vector[1] = max(-coords[i][1], noisy_vector[1])
+				vectors[i][j] = noisy_vector
+				#print('After:', coords[i], vectors[i][j])
 	return vectors 
 
