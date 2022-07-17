@@ -103,6 +103,7 @@ def run_test_case(
 	true_vectors = vg.coords2vectors(true_nodes, space_size)
 
 	if not test:
+		
 		measured = vg.coords2vectors(true_nodes, space_size, angle_noise=angle_noise, radius_noise=radius_noise, noise_ratio=noise_ratio)
 	else:
 		measured = np.array([
