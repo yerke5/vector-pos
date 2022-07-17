@@ -1,0 +1,8 @@
+matplotlib==3.5.1
+matplotlib-inline==0.1.2
+numba==0.55.1
+numexpr==2.8.1
+numpy==1.21.5
+numpydoc==1.2
+Optimized-Kalman-Filter==0.0.3
+torch==1.12.0
