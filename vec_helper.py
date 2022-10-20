@@ -1,11 +1,32 @@
 from itertools import permutations
 import numpy as np
 import matplotlib.pyplot as plt
+import math
+import copy
 
 MAX_K = 2
 
-def format_indices(indices):
-	return "{" + ", ".join(['M' + str(i + 1) + '-' + str(j + 1) for (i, j) in indices]) + '}'
+def vec_matrix2edge_index(matrix):
+	for i in range(len(matrix)):
+		for j in range(len(matrix)):
+			if i != j and not vh.is_missing(matrix[i][j]):
+				pass
+
+def replace_missing_vectors(vectors, value):
+	updated = copy.deepcopy(vectors)
+	for i in range(len(vectors)):
+		for j in range(len(vectors)):
+			if i == j:
+				updated[i][j] = [0, 0]
+			elif is_missing(vectors[i][j]):
+				updated[i][j] = [value, value]
+	return updated
+
+def format_indices(indices, sort=True):
+	return "{" + ", ".join([format_vector_name((i + 1, j + 1)) for (i, j) in sorted(indices)]) + '}'
+
+def format_vector_name(index):
+	return "-".join(["M" + str(i) for i in index])
 
 def beautify_matrix(m):
 	output = '[\n'
@@ -51,6 +72,14 @@ def paths2dict(temp):
 			paths[(path[0], path[-1])].append(path)
 	return paths
 
+def get_orientations(coords):
+	orientations = np.zeros((len(coords), 2))
+
+	for i in range(len(orientations)):
+		orientations[i] = np.sum(np.concatenate([np.array(coords)[:i, :], np.array(coords)[i + 1:, :]]), axis=0) / (len(coords) - 1) - coords[i]
+
+	return orientations
+
 def get_magnitude(vector):
 	return np.sqrt(np.sum(vector**2))
 
@@ -77,7 +106,7 @@ def generate_paths(num_points, id_pairs=None, max_k=MAX_K, full=False):
 
 	return paths
 
-def draw_vectors(space_size, coords, vectors, title, plot_orientations=False):
+def draw_vectors(space_size, coords, vectors, title, plot_orientations=False, max_angle=40, show=False):
 	origin_x = []
 	origin_y = []
 	vector_x = []
@@ -85,10 +114,14 @@ def draw_vectors(space_size, coords, vectors, title, plot_orientations=False):
 
 	if plot_orientations:
 		orientations = np.zeros((len(coords), 2))
+		orientations_left = np.zeros((len(coords), 2))
+		orientations_right = np.zeros((len(coords), 2))
 	
 	for i in range(len(vectors)):
 		if plot_orientations:
-			orientations[i] = np.sum(np.concatenate([np.array(true_nodes)[:i, :], np.array(true_nodes)[i + 1:, :]]), axis=0) / (len(true_nodes) - 1)
+			orientations[i] = np.sum(np.concatenate([np.array(coords)[:i, :], np.array(coords)[i + 1:, :]]), axis=0) / (len(coords) - 1) - coords[i]
+			orientations_left[i] = add_angle(orientations[i], -max_angle)
+			orientations_right[i] = add_angle(orientations[i], max_angle)
 		
 		for j in range(len(vectors)):
 			if i != j:
@@ -96,28 +129,62 @@ def draw_vectors(space_size, coords, vectors, title, plot_orientations=False):
 				origin_y.append(coords[i][1])
 				vector_x.append(vectors[i][j][0])
 				vector_y.append(vectors[i][j][1])
-
+	
 	plt.title(title)
 	plt.scatter(origin_x, origin_y)
-
-	for i, txt in enumerate([i for i in range(len(vectors))]):
-   		plt.annotate("M" + str(txt), (origin_x[i], origin_y[i]))
 
 	plt.quiver(origin_x, origin_y, vector_x, vector_y, angles='xy', scale_units='xy', scale=1)
 
 	if plot_orientations:
-		plt.quiver(origin_x, origin_y, orientations[:, 0], orientations[:, 1], angles='xy', scale_units='xy', scale=1, c="red")
+		plt.quiver(np.array(coords)[:, 0], np.array(coords)[:, 1], orientations[:, 0], orientations[:, 1], angles='xy', scale_units='xy', scale=1, color="red")
+		plt.quiver(np.array(coords)[:, 0], np.array(coords)[:, 1], orientations_left[:, 0], orientations_left[:, 1], angles='xy', scale_units='xy', scale=1, color="green")
+		plt.quiver(np.array(coords)[:, 0], np.array(coords)[:, 1], orientations_right[:, 0], orientations_right[:, 1], angles='xy', scale_units='xy', scale=1, color="blue")
 
 	plt.axis('equal')  #<-- set the axes to the same scale
 	plt.xlim(0, space_size)
 	plt.ylim(0, space_size)
 	plt.grid(b=True, which='major') #<-- plot grid lines
-	plt.show()
+	if show:
+		plt.show()
+
+def add_angle(node, angle):
+	r = math.sqrt(node[0]**2 + node[1]**2)
+	x_angle = math.acos(node[0] / r)
+	y_angle = math.asin(node[1] / r)
+	return (
+		r * math.cos(x_angle + angle * math.pi / 180), 
+		r * math.sin(y_angle )#+ angle * math.pi / 180)# + angle)
+	)
 
 def get_cmap(n, name='hsv'):
     '''Returns a function that maps each index in 0, 1, ..., n-1 to a distinct 
     RGB color; the keyword argument name must be a standard mpl colormap name.'''
     return plt.cm.get_cmap(name, n)
+
+def generate_paths_of_length(num_points, length, id_pairs=None):
+	node_ids = [i for i in range(num_points)]
+	pairs = list(permutations(node_ids, 2)) if not id_pairs else id_pairs
+	paths = {pair: [] for pair in pairs}
+
+	for i, pair in enumerate(pairs):
+		full_middle_path = set(node_ids) - set(pair)
+		start, end = pair
+		middle_perms = list(permutations(full_middle_path, length - 2))
+		for middle_perm in middle_perms:
+			paths[pair].append((start, *middle_perm, end))
+			#yield (pair, (start, *middle_perm, end))
+
+	return paths
+
+def path_to_pairs(path):
+	if path[0] == path[-1]:
+		raise Exception("Wrong path")
+	#print(path)
+	pairs = []
+	for i in range(1, len(path)):
+		pairs.append((path[i - 1], path[i]))
+	#print(pairs)
+	return pairs
 
 def scatter_locations(space_size, coords, vectors, title):
 	origin_x = []
@@ -140,4 +207,12 @@ def scatter_locations(space_size, coords, vectors, title):
 	plt.xlim(-space_size, space_size)
 	plt.ylim(-space_size, space_size)
 	plt.grid(b=True, which='major') #<-- plot grid lines
+	plt.show()
+
+def plot_errors(df, noise):
+	cols = ["Measured", "Generated", "GA"]#, "Generated GA"]
+	#plt.style.use('seaborn')
+	ax = df.plot(x="Noisy Vector Ratio", y=cols, kind="bar")
+	ax.set_title(f"GA vs. Other Methods (Noise Level = {noise}%)")
+	ax.set_ylabel("Positioning error")
 	plt.show()

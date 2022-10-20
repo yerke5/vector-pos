@@ -79,31 +79,12 @@ def get_generated_vector(path, measured, verbose=False):
 def generate_random_node(size):
 	return [random.random() * size, random.random() * size]
 
-def coords2vectors(coords, space_size, angle_noise=.3, radius_noise=.3, noise_ratio=0, verbose=True):
+def coords2vectors(coords):
 	vectors = np.zeros((len(coords), len(coords), 2))
-	noise = noise_ratio > 0
-	pairs = []
-	for i in range(len(coords)):
-		for j in range(len(coords)):
-			if i != j:
-				pairs.append((i, j))
 
-	pairs = random.sample(pairs, int(noise_ratio * (len(coords)**2 - len(coords))))
 	for i in range(len(coords)):
 		for j in range(len(coords)):
 			vectors[i][j] = coords[j] - coords[i] 
-			if noise and (i, j) in pairs:
-				#print('Before:', coords[i], vectors[i][j])
-				#print(space_size - coords[i])
-				noisy_vector = list(vm.add_noise(vectors[i][j], space_size, angle_noise=angle_noise, radius_noise=radius_noise))
-				noisy_vector[0] = min(space_size - coords[i][0], noisy_vector[0])
-				noisy_vector[1] = min(space_size - coords[i][1], noisy_vector[1])
-				noisy_vector[0] = max(-coords[i][0], noisy_vector[0])
-				noisy_vector[1] = max(-coords[i][1], noisy_vector[1])
-				vectors[i][j] = noisy_vector
-				#print('After:', coords[i], vectors[i][j])
 
-	if verbose and noise:
-		print('Noisy vectors:', ", ".join(sorted(["M" + str(x[0] + 1) + '-' + str(x[1] + 1) for x in pairs])))
 	return vectors 
 
