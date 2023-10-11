@@ -4,617 +4,436 @@ import numpy as np
 import vec_manipulator as vm 
 import vec_helper as vh
 import vec_generator as vg
+import consistency_checker as vc
 import operator
 import math
-from numba import jit
+import random
 
 DEFAULT_MUTATION_RATE = 0.2
 DEFAULT_CROSSOVER_RATE = 0.8
+MAX_ITERS_CONSISTENCY_CHECK = 10
 
-def generate_population2(vectors, deletion_prob, size, min_diffs_ratio, paths, num_deduction_components, enforce_deduction=False):
-	population = []
-	ids = set()
-
-	k = 0
-	while len(population) < size and k < 10:
-		temp = copy.deepcopy(vectors)
-		for i in range(len(vectors)):
-			for j in range(len(vectors)):
-				if i != j and random.random() <= deletion_prob:
-					temp[i][j] = np.nan
-
-		to_proceed = not enforce_deduction or (vm.deduce_vectors(temp, paths, verbose=False, enforce_deduction=enforce_deduction) is not None)
-
-		#if deduced is not None:
-		# assume deduction is not important, meaning some vectors can be left ungenerated
+class GA:
+	def __init__(
+		self, 
+		measured,
+		population_size, 
+		iters,
+		vecgen,
+		conscheck,
+		elite_proportion=.1,
+		crossover_rate=.8,
+		mutation_rate=.1, 
+		crossover_type=2, 
+		mutation_type=6, 
+		deletion_prob=.3,
+		max_init_consistency_shapes=30,
+		max_supergene_shapes=10,
+		max_di_components=5,
+		min_di_components=1,
+		missing_vectors_weight=.2,
+		verbose=False,
+		init_consistent_shapes_ratio = .3,
+		init_consistency_shape_delta=.05
+	):
+		self.population_size = population_size
+		self.vector_generator = vecgen
+		self.consistency_checker = conscheck
+		self.crossover_rate = crossover_rate
+		self.crossover_type = crossover_type 
+		self.mutation_rate = mutation_rate
+		self.mutation_type = mutation_type 
+		self.verbose = verbose
+		self.max_init_consistency_shapes = max_init_consistency_shapes
+		self.max_supergene_shapes = max_supergene_shapes
+		self.num_elites = int(elite_proportion * population_size)
+		self.measured = copy.deepcopy(measured)
+		self.deletion_prob = deletion_prob
+		self.iters = iters
+		self.max_di_components = max_di_components
+		self.min_di_components = min_di_components
+		self.missing_vectors_weight = missing_vectors_weight
+		self.init_consistent_shapes_ratio = init_consistent_shapes_ratio
+		self.init_consistency_shape_delta = init_consistency_shape_delta
 		
-		if to_proceed:
-			curr_ids = vh.format_indices(vh.matrix2indices(temp))
-			#curr_ids = set(vh.matrix2indices(temp))
-			if curr_ids not in ids:
-				if calculate_di(vg.get_generated_vectors(temp, paths, num_deduction_components), temp, paths=paths, min_diffs_ratio=min_diffs_ratio) is not None:
-					population.append(temp)
-					ids.add(curr_ids)
-					k = 0
+	def generate_population(self):
+		vectors = self.measured
+		population = [copy.deepcopy(self.measured)]
+		all_pairs = set(self.vector_generator.params.generation_paths.keys())
+		available_pairs = all_pairs - set(vh.get_missing(vectors))
+		population_fitness = {0: self.calculate_di(vectors)}
 
-		k += 1
-
-	return np.array(population)
-
-def generate_population(vectors, deletion_prob, size, min_diffs_ratio, paths, num_deduction_components, di_type, enforce_deduction=False):
-	population = []
-	all_pairs = set(paths.keys())
-	#print(all_pairs)
-	pairs = set(paths.keys())
-	to_keep = set()
-	ids = set()
-
-	most_consistent = vm.remove_inconsistent_vectors(vectors, num_deduction_components, min_diffs_ratio, paths)
-	#print('Num most consistent vecs:', len(vh.matrix2indices(most_consistent)))
-	#print('DI?', calculate_di(vg.get_generated_vectors(most_consistent, paths, num_deduction_components, enforce_deduction), most_consistent, paths=paths, min_diffs_ratio=min_diffs_ratio) is not None)
-	mcdi = calculate_di(di_type, most_consistent, paths=paths, min_diffs_ratio=min_diffs_ratio) 
-	print("Most consistent DI:", mcdi)
-
-	assert mcdi is not None
-
-	population.append(most_consistent)
-
-	#consistent_vecs = vm.get_consistent_vectors(vectors)
-	#print('Non-consistent vecs:', ", ".join(["M" + str(x[0] + 1) + str(x[1] + 1) for x in set(paths.keys()) - set(vh.matrix2indices(consistent_vecs))]))
-
-	consistent_vecs2 = vm.get_consistent_vectors2(vectors, paths, num_deduction_components)
-	print('Vectors deleted after the second heuristic:', ", ".join(sorted(["M" + str(x[0] + 1) + '-' + str(x[1] + 1) for x in set(paths.keys()) - set(vh.matrix2indices(consistent_vecs2))])))
-	mcdi2 = calculate_di(di_type, consistent_vecs2, paths=paths, min_diffs_ratio=min_diffs_ratio) 
-	print("Most consistent 2 DI:", mcdi2)
-
-	assert mcdi2 is not None 
-	population.append(consistent_vecs2)
-
-	nodes = set([i for i in range(len(vectors))])
-	while all_pairs:
-		pivot = all_pairs.pop()
-		#print(to_keep)
-		#print(all_pairs)
-		#print('Pivot:', pivot)
-		candidates_to = set()
-		candidates_from = set()
-
-		for i in range(len(vectors)):
-			if i not in pivot:
-				candidates_to.add((pivot[0], i))
-				candidates_from.add((i, pivot[1]))
-
-		for i in range(max(1, int(min_diffs_ratio * (len(vectors) - 1))) + 1):
-			chosen = None 
-			chosen_to = candidates_to.intersection(to_keep)
-			chosen_from = candidates_from.intersection(to_keep)
-			#print("Candidates to:", chosen_to)
-			#print("Candidates from:", chosen_from)
-			if not chosen_to:
-				if not chosen_from:
-					if candidates_to:
-						chosen = candidates_to.pop()[1]
-					elif candidates_from:
-						chosen = candidates_from.pop()[0]
-					else:
-						raise Exception('Not enough vectors for DI generation')
-				else:
-					chosen = chosen_from.pop()[0]
-			else:
-				if chosen_from:
-					for ct in chosen_to:
-						for cf in chosen_from:
-							if ct[1] == cf[0]:
-								chosen = ct[1]
-								break
-						if chosen is not None:
-							break
+		if self.vector_generator.params.consistency_paths is not None:
+			k = 0
+			while len(population) < self.population_size * self.init_consistent_shapes_ratio and k < 100:
+				consistent_vectors = self.consistency_checker.get_consistency_shapes(vectors, max_shapes=self.max_init_consistency_shapes, delta=self.init_consistency_shape_delta)
 				
-				if chosen is None:
-					if candidates_from:
-						chosen = candidates_from.pop()[0]
-					elif candidates_to:
-						chosen = candidates_to.pop()[1]
-					else:
-						raise Exception('Not enough vectors for DI generation')
-			#print('Chose', (pivot[0], chosen, pivot[1]))
-			to_keep.add((pivot[0], chosen))
-			to_keep.add((chosen, pivot[1]))
-			#all_pairs -= set([(pivot[0], chosen), (chosen, pivot[1])])
-			
-			candidates_to -= set([(pivot[0], chosen)])
-			candidates_from -= set([(chosen, pivot[1])])
-	
-	temp = copy.deepcopy(vectors)
-	for p in pairs - to_keep:
-		temp[p[0]][p[1]] = np.nan
+				# add random missing vectors
+				rvs = self.random_vectors(available_pairs)
+				for rv in rvs:
+					if vh.is_missing(consistent_vectors[rv[0]][rv[1]]):
+						consistent_vectors[rv[0]][rv[1]] = self.measured[rv[0]][rv[1]].copy()
 
-	for i in range(len(vectors)):
-		for j in range(len(vectors)):
-			if vh.is_missing(temp[i][j]) and not vm.is_deducible(i, j, temp, num_deduction_components):
-				comps = 0
-				for k in range(len(vectors)):
-					if (i, k) in to_keep:
-						to_keep.add((k, j))
-						temp[k][j] = vectors[k][j].copy()
-					elif (k, j) in to_keep:
-						to_keep.add((i, k))
-						temp[i][k] = vectors[i][k].copy()
-					else:
-						to_keep.add((i, k))
-						to_keep.add((k, j))
-						temp[i][k] = vectors[i][k].copy()
-						temp[k][j] = vectors[k][j].copy()
-					
-					comps += 1
-					if comps >= num_deduction_components:
-						break
-
-	#to_keep = to_keep.union(vh.matrix2indices(consistent_vecs))
-
-	print('Number of vectors to keep:', len(to_keep), 'out of', len(vectors) ** 2 - len(vectors))	
-	
-	#print(vh.beautify_matrix(vm.deduce_vectors(temp, paths, num_deduction_components, enforce_deduction=enforce_deduction)))
-	#print('DI?', calculate_di(vg.get_generated_vectors(temp, paths, num_deduction_components), temp, paths=paths, min_diffs_ratio=min_diffs_ratio) is not None)
-
-	optional = pairs - to_keep
-	k = 0
-	while len(population) < size and k < 100:
-		new_set = to_keep.union(random_subset(optional, deletion_prob=deletion_prob))
-		#print(len(new_set))
-		new_id = vh.format_indices(sorted(list(new_set), key=lambda item: (item[0], item[1])))
-		if new_id not in ids:
-			temp = copy.deepcopy(vectors)
-			for i in range(len(temp)):
-				for j in range(len(temp)):
-					if i != j and (i, j) not in new_set:
-						temp[i][j] = np.nan
-			
-			to_proceed = not enforce_deduction or (vm.deduce_vectors(temp, paths, verbose=False, enforce_deduction=enforce_deduction, num_deduction_components=num_deduction_components) is not None)
-
-			# assume deduction is not important, meaning some vectors can be left ungenerated
-			if to_proceed:
-				#print('DEDUCTION SUCCESS')
-				di = calculate_di(di_type, temp, paths=paths, min_diffs_ratio=min_diffs_ratio) 
-				if di is not None: # vg.get_generated_vectors(temp, paths, num_deduction_components)
-					#print('DI SUCCESS')
-					population.append(temp)
-					ids.add(new_id)
+				di = self.calculate_di(consistent_vectors)
+				if di is not None: 
+					population.append(consistent_vectors)
+					population_fitness[len(population) - 1] = 1 / di if di != 0 else float('inf')
 					k = 0
-		k += 1
+				k += 1
+				
+		print("[INFO] Finished searching for consistent shapes; current population size:", len(population))
 
-	return np.array(population)
+		k = 0
+		while len(population) < self.population_size and k < 100:
+			deleted_pairs = self.random_subset(available_pairs)
+			ind = copy.deepcopy(vectors)
+			for pair in deleted_pairs:
+				ind[pair[0]][pair[1]] = np.nan
+			population.append(ind)
+			population_fitness[len(population) - 1] = self.calculate_di(ind)
+			k += 1
 
-def random_subset(s, deletion_prob):
-	return set(filter(lambda x: random.random() < deletion_prob, s))
+		print("[INFO] Finished searching for random chromosomes; current population size:", len(population))
+		return np.array(population), sorted(population_fitness.items(), key=operator.itemgetter(1), reverse=True)
 
-def tournament_selection(population, population_fitness, num_elites, k=2):
-	selection = []
+	def random_subset(self, s):
+		return set(filter(lambda x: random.random() < self.deletion_prob, s))
 
-	# preserve the elite
-	for i in range(num_elites):
-		try:
-			selection.append(population_fitness[i][0])
-		except:
-			print('Population fitness:', population_fitness)
-			raise Exception('Not enough chromosomes for selection')
+	def random_vectors(self, s):
+		out = set()
+		for el in s:                                                                                                                    
+			# random coin flip
+			if random.randint(0, 1) == 0:
+				out.add(el)
+		return out
 
-	for _ in range(len(population) - num_elites):
-		b = random.randint(0, len(population_fitness) - 1)
-		for i in np.random.randint(0, len(population_fitness), k - 1):
-			if population_fitness[i][1] > population_fitness[b][1]:
-				b = i 
-		selection.append(population_fitness[b][0])
-	
-	return [population[i] for i in selection]
+	def tournament_selection(self, population, population_fitness, k=2):
+		selection = []
 
-def get_population_fitness(population, min_diffs_ratio, paths, num_deduction_components, di_type, verbose=False):
-	population_fitness = dict()
-	for i, individual in enumerate(population):
-		#deduced = deduce_vectors(individual)
-		if verbose:
-			print('Chromosome:', vh.format_indices(vh.matrix2indices(individual)), f'(Missing: {vh.format_indices(vh.get_missing(individual))})')
-		di = calculate_di(
-			di_type,
-			individual, 
-			paths=paths,
-			verbose=verbose, 
-			min_diffs_ratio=min_diffs_ratio
-		) 
+		# preserve the elite
+		for i in range(self.num_elites):
+			try:
+				selection.append(population_fitness[i][0])
+			except:
+				print('Population fitness:', population_fitness)
+				raise Exception('Not enough chromosomes for selection')
 
-		if di is None:
-			#print(vh.format_indices(vh.matrix2indices(individual)))
-			#print(vh.beautify_matrix(individual))
-			raise Exception('Cannot calculate DI for one chromosome. Something went wrong during reproduction or initial population generation')
-
-		if di == 0:
-			population_fitness[i] = float('inf')
-		else:
-			population_fitness[i] = 1 / di
-	
-	# for k, v in population_fitness.items():
-	# 	if v == 0:
-	# 		population_fitness[k] = float('inf')
-	# 	else:
-	# 		population_fitness[k] = 1 / v
-	return sorted(population_fitness.items(), key=operator.itemgetter(1), reverse=True)
-
-def generate_offspring(
-	selection, 
-	num_elites, 
-	min_diffs_ratio,
-	enforce_deduction,
-	paths,
-	space_size,
-	measured,
-	num_deduction_components,
-	di_type,
-	mutation_rate=DEFAULT_MUTATION_RATE, 
-	crossover_rate=DEFAULT_CROSSOVER_RATE,
-	variations=None,
-	mutation_percent_change=.3,
-	verbose=False,
-	mutation_type=4,
-	inner_workings=False,
-	faster=False
-):
-	if len(selection) < 2:
-		return selection
-	offspring = []
-
-	# preserve the elite
-	for i in range(num_elites):
-		offspring.append(selection[i])
-
-	k = 0
-	while len(offspring) < len(selection) and k < 100:
-		i1 = i2 = -1
-		while i1 == i2:
-			i1 = random.randint(0, len(selection) - 1)
-			i2 = random.randint(0, len(selection) - 1)
+		for _ in range(len(population) - self.num_elites):
+			b = random.randint(0, len(population_fitness) - 1)
+			for i in np.random.randint(0, len(population_fitness), k - 1):
+				if population_fitness[i][1] > population_fitness[b][1]:
+					b = i 
+			selection.append(population_fitness[b][0])
 		
-		# crossover
-		if inner_workings:
-			print('[INFO] Attempting crossover...')
-		child = crossover(selection[i1], selection[i2], crossover_rate, paths, num_deduction_components, variations=variations, verbose=verbose)
+		return [population[i] for i in selection]
 
-		to_proceed = not enforce_deduction or (vm.deduce_vectors(child, paths, num_deduction_components, verbose=False, enforce_deduction=enforce_deduction) is not None)
-		
-		if to_proceed:
-			# mutation
+	def generate_offspring(
+		self,
+		selection, 
+		inner_workings=False
+	):
+		population_fitness = dict()
+		if len(selection) < 2:
+			return selection
+		offspring = []
+
+		# preserve the elite
+		for i in range(self.num_elites):
+			di = self.calculate_di(selection[i])
+			population_fitness[i] = 1 / di if di != 0 else float("inf")
+			offspring.append(selection[i])
+
+		k = 0
+		while len(offspring) < self.population_size and k < 100:
+			i1 = i2 = -1
+			while i1 == i2:
+				i1 = random.randint(0, len(selection) - 1)
+				i2 = random.randint(0, len(selection) - 1)
+			
+			# crossover
 			if inner_workings:
-				print('[INFO] Attempting mutation...')
-			#child = mutation3(child, mutation_rate, mutation_percent_change, min_diffs_ratio, paths, space_size)
-			if mutation_type == 4:
-				child = mutation4(child, mutation_rate, mutation_percent_change, min_diffs_ratio, paths, space_size)
-			elif mutation_type == 3:
-				child = mutation3(child, mutation_rate, mutation_percent_change, min_diffs_ratio, paths, space_size)
-			elif mutation_type == 5:
-				child = mutation5(measured, child, mutation_rate, mutation_percent_change, min_diffs_ratio, paths, space_size)
-			
-			di = calculate_di(
-				di_type, 
-				child, 
-				paths=paths, 
-				min_diffs_ratio=min_diffs_ratio, 
-				faster=faster
-			)
+				print('[INFO] Attempting crossover...')
 
-			if di is not None:
-				offspring.append(child)
-			
-				if inner_workings:
-					print('[INFO] One reproduction instance successful')
-				
-		k += 1
+			if self.crossover_type == 2:
+				#if not supergenes:
+					#raise Exception("Missing supergenes")
+				if self.vector_generator.params.consistency_paths is None:
+					raise Exception("Consistency paths missing from input for crossover of specified type")
+				supergenes1 = self.consistency_checker.get_supergenes(selection[i1], max_shapes=self.max_supergene_shapes)
+				supergenes2 = self.consistency_checker.get_supergenes(selection[i2], max_shapes=self.max_supergene_shapes)
+				children = self.crossover2(selection[i1], selection[i2], supergenes1, supergenes2)
 
-	if len(offspring) > len(selection):
-		offspring = offspring[:len(selection)]
-	
-	return offspring
+			for child in children:
+				if len(offspring) < len(selection):
+					to_proceed = not self.vector_generator.params.enforce_inference or (self.vector_generator.get_inferrable_vectors(child) is not None)
+					
+					if to_proceed:
+						# mutation
+						if inner_workings:
+							print('[INFO] Attempting mutation...')
+						
+						if self.mutation_type == 6:
+							child = self.mutation6(child)
 
-def crossover(p1, p2, crossover_rate, paths, num_deduction_components, verbose=False, variations=None):
-	if random.random() < crossover_rate:
-		v1 = vh.matrix2indices(p1)
-		v2 = vh.matrix2indices(p2)
+						di = self.calculate_di(child)
 
-		#np.random.shuffle(v1)
-		#np.random.shuffle(v2)
-		i1 = random.randint(0, len(v1) - 1)
-		i2 = random.randint(0, len(v2) - 1)
+						if di is not None:
+							#print("Adding child!", 1 / di if di != 0 else float('inf'))
+							offspring.append(child)
+							population_fitness[len(offspring) - 1] = 1 / di if di != 0 else float('inf')
 
+							if inner_workings:
+								print('[INFO] One reproduction instance successful')
+					
+			k += 1
+
+		# if len(offspring) > len(selection):
+		# 	offspring = offspring[:len(selection)]
+		# 	population_fitness = population_fitness[:len(selection)]
 		
-		indexes = set(v1[:i1]).union(set(v2[i2:]))
+		return offspring, sorted(population_fitness.items(), key=operator.itemgetter(1), reverse=True)
 
-		child = np.zeros((len(p1), len(p1), 2))
-		child[:] = np.nan
+	def crossover2(self, p1, p2, perfect_genes1, perfect_genes2):
+		if random.random() < self.crossover_rate:
+			i1 = set(vh.matrix2indices(p1))
+			i2 = set(vh.matrix2indices(p2))
 
-		for i in range(len(child)):
-			child[i][i] = [0, 0]
+			if not i1 or not i2:
+				raise Exception("Found empty chromosomes; something went wrong")
+			
+			v1 = list(i1 - set(perfect_genes1))
+			v2 = list(i2 - set(perfect_genes2))
 
-		for (i, j) in indexes:
-			if not vh.is_missing(p1[i][j]):
-				child[i][j] = p1[i][j].copy()
+			if not v1 and not v2:
+				return [p1, p2]
+
+			if not v1:
+				indexes1 = perfect_genes2
+				indexes2 = perfect_genes1.union(v2)
+			elif not v2:
+				indexes2 = perfect_genes1
+				indexes1 = perfect_genes2.union(v1)
 			else:
-				child[i][j] = p2[i][j].copy()
+				i1 = random.randint(0, len(v1) - 1)
+				i2 = random.randint(0, len(v2) - 1)
+				indexes1 = set(v1[:i1]).union(set(v2[i2:])).union(perfect_genes1)
+				indexes2 = set(v2[:i1]).union(set(v1[i2:])).union(perfect_genes2)
+
+			child1 = np.zeros((len(p1), len(p1), 2))
+			child2 = np.zeros((len(p1), len(p1), 2))
+			child1[:] = np.nan
+			child2[:] = np.nan
+
+			for i in range(len(child1)):
+				child1[i][i] = [0, 0]
+				child2[i][i] = [0, 0]
+
+			for (i, j) in indexes1:
+				if not vh.is_missing(p1[i][j]):
+					child1[i][j] = p1[i][j].copy()
+				else:
+					child1[i][j] = p2[i][j].copy()
+			
+			for (i, j) in indexes2:
+				if not vh.is_missing(p2[i][j]):
+					child2[i][j] = p2[i][j].copy()
+				else:
+					child2[i][j] = p1[i][j].copy()
+
+			if self.verbose:
+				print('CROSSOVER:')
+				print('Parent 1:', vh.format_indices(v1))
+				print('Parent 2:', vh.format_indices(v2))
+				print('Cutting before index', i1, 'at parent 1')
+				print('Cutting after index', i2, 'at parent 2')
+				print('--> Child 1:', vh.format_indices(vh.matrix2indices(child1)))
+				print('--> Child 2:', vh.format_indices(vh.matrix2indices(child2)))
+
+			return [child1, child2]
+		return [p1, p2]
+	
+	def crossover(self, p1, p2, perfect_genes1, perfect_genes2, delta=1e-6):
+		if random.random() < self.crossover_rate:
+			i1 = set(vh.matrix2indices(p1))
+			i2 = set(vh.matrix2indices(p2))
+
+			if not i1 or not i2:
+				raise Exception("Found empty chromosomes; something went wrong")
+			
+			v1 = list(i1 - set(perfect_genes1))
+			v2 = list(i2 - set(perfect_genes2))
+
+			if not v1 and not v2:
+				return [p1, p2]
+
+			gp2 = self.vector_generator.get_generated_vectors(p2)
+			for (pi, pj) in perfect_genes1:
+				for i in range(len(p1)):
+					if np.sum(((p1[pi][pj] + gp2[pj][i]) - p1[pi][i]))**2 <= delta:
+						pass
+			#return [child1, child2]
+		return [p1, p2]
+
+	def mutation6(self, individual):
+		if self.vector_generator.params.consistency_paths is None:
+			raise Exception("Consistency paths not passed for mutation of specified type")
+		temp = copy.deepcopy(individual)
+
+		if random.random() <= self.mutation_rate:
+			#if random.random() < .7:
+				supergenes = self.consistency_checker.get_supergenes(individual)
+				
+				# select gene for deletion
+				missing = set(vh.get_missing(individual))
+				ds = (set(vh.matrix2indices(individual)) - set(supergenes) - missing)
+				to_delete = ds.pop() if ds else None
+
+				if to_delete:
+					temp[to_delete[0]][to_delete[1]] = np.nan 
+				# select gene for addition
+				
+				if ds:
+					to_add = ds.pop()
+					if to_add:
+						temp[to_add[0]][to_add[1]] = self.measured[to_add[0]][to_add[1]].copy()
+			# else:
+			# 	for i in range(len(individual)):
+			# 		for j in range(len(individual)):
+			# 			if random.random() <= self.mutation_rate:
+			# 				individual[i][j] += (-1)**random.randint(0, 1) * random.random() * .05
+
+		return temp
+
+	# this one includes the number of missing vectors in the cost
+	def calculate_di(self, vectors):
+		#measured = vg.get_inferrable_vectors(measured, paths, self.vector_generator.params.max_infer_components, verbose=False, self.vector_generator.params.enforce_inference=False)
+
+		if self.vector_generator.params.enforce_inference and vectors is None:
+			return None 
+
+		generated = self.vector_generator.get_generated_vectors(vectors)
+		num_vectors = len(vh.matrix2indices(vectors))
+		if num_vectors == 0:
+			return 100000000
+		
+		di = 0
+		
+		if self.verbose:
+			print('Calculating DI')
+		
+		for i in range(len(generated)):
+			for j in range(len(generated)):
+				c1 = ""
+				curr = 0
+				if i != j:
+					if vh.is_missing(vectors[i][j]):
+						continue 
+					curr += np.sum((vectors[i][j] - generated[i][j])**2)
+					num_perms = 1
+					
+					if self.verbose:
+						print("M" + str(i + 1) + str(j + 1) + ": " + f"sqrt(({vectors[i][j]} - {generated[i][j]})**2", end="")
+						c1 += "M" + str(i + 1) + str(j + 1) + ": " + "sqrt(((M" + str(i + 1) + str(j + 1) + "(m) - " + "M" + str(i + 1) + str(j + 1) + "(g))**2 "
+					
+					curr_paths = self.vector_generator.params.generation_paths[(i, j)]#[:min_required_components]
+					random.shuffle(curr_paths)
+
+					for path in curr_paths:
+						if len(path) > 2:# and ((di_type == "measured" and vh.is_valid(path, measured)) or di_type == "generated"):
+							if self.verbose:
+								print(f" + ({generated[i][j]} - (", end="")
+								c1 += " + (M" + str(i + 1) + str(j + 1) + "(g) - " + "M" + str(i + 1) + str(j + 1) + f"(g{','.join([str(p + 1) for p in path])}))**2 "
+
+							intermediary = self.vector_generator.get_generated_vector(path, vectors)
+							if intermediary is None:
+								continue 
+							curr += np.sum((generated[i][j] - intermediary)**2)
+							
+							if self.verbose:
+								print("))**2", end="")
+								
+							num_perms += 1
+
+							if num_perms >= self.max_di_components:
+								break
+
+					# if num_perms < self.min_di_components:
+					# 	return None
+
+					curr /= num_perms
+					di += math.sqrt(curr)
+
+					if self.verbose:
+						print(f') / {num_perms})')
+						c1 += f') / {num_perms})'
+				
+				if c1 != "":
+					print(c1)
+		
+		return (di / num_vectors) / self.vector_generator.params.space_size * (1 - self.missing_vectors_weight) + (len(vh.get_missing(generated)) / (len(vectors) * (len(vectors) - 1)) * self.missing_vectors_weight if self.missing_vectors_weight > 0 else 0)
+
+	def run( 
+		self,
+		true_vectors=None,
+		verbose=False
+	):
+		if verbose:
+			print('[INFO] Generating population...')
+		
+		population, population_fitness = self.generate_population()
+		
+		if len(population) == 0:
+			raise Exception('Unable to generate an initial population')
 		
 		if verbose:
-			print('CROSSOVER:')
-			print('Parent 1:', vh.format_indices(v1))
-			print('Parent 2:', vh.format_indices(v2))
-			print('Cutting before index', i1, 'at parent 1')
-			print('Cutting after index', i2, 'at parent 2')
-			print('--> Child:', vh.format_indices(vh.matrix2indices(child)))
+			print("[INFO] Initial population (first 5):")
+			for i in population[:5]:
+				print(vh.format_indices(vh.matrix2indices(i)))
+		
+		best_individual = None 
+		dis = []
+		best_errors = []
 
-		deduced = vm.deduce_vectors(child, paths, num_deduction_components)
-		if deduced is not None and variations:
-			choice = random.sample(variations, 1)[0]
-			if choice == "deduced":
-				return deduced
-			if choice == "generated-deduced":
-				return vg.get_generated_vectors(deduced, paths, num_deduction_components, enforce_deduction)
-			if choice == "generated":
-				return vg.get_generated_vectors(child, paths, num_deduction_components, enforce_deduction)
-		return child 
-	if random.random() < 0.5:
-		return copy.deepcopy(p1)
-	return copy.deepcopy(p2)
+		for i in range(self.iters):
+			print(f'[INFO] Iteration {i + 1}:')
+			print('[INFO] Calculating population fitness')
+			
+			if best_individual is None or (population_fitness[0][1] > 0 and 1 / population_fitness[0][1] < (1 / best_fitness if best_fitness > 0 else float('inf'))):
+				res = self.vector_generator.infer_vectors(population[population_fitness[0][0]]) #self.vector_generator.get_inferrable_vectors(population[population_fitness[0][0]], coverage=None)
 
-def mutation(individual, mutation_rate, percent_change, min_diffs_ratio, paths, verbose=False):
-	temp = copy.deepcopy(individual)
-	for i in range(len(temp)):
-		for j in range(len(temp)):
-			if i != j and not vh.is_missing(temp[i][j]) and random.random() <= mutation_rate:
-				prev_di = calculate_di(vg.get_generated_vectors(temp, paths=paths), temp, paths=paths, min_diffs_ratio=min_diffs_ratio)
-				temp[i][j][0] = (1 + percent_change) * individual[i][j][0]
-				di = calculate_di(vg.get_generated_vectors(temp, paths=paths), temp, paths=paths, min_diffs_ratio=min_diffs_ratio)
-				if di > prev_di:
-					temp[i][j][0] = (1 - percent_change) * individual[i][j][0]
-					di = calculate_di(vg.get_generated_vectors(temp, paths=paths), temp, paths=paths, min_diffs_ratio=min_diffs_ratio)
-					if di > prev_di:
-						temp[i][j][0] = individual[i][j][0]
+				if res is None:
+					if not self.vector_generator.params.enforce_inference:
+						print('[WARNING] Since deduction was not enforced, some vectors will be missing')
 					else:
-						prev_di = di
+						raise Exception('Violation of enforcing deduction detected, which means that something went wrong')
 				else:
-					prev_di = di
+					best_individual, mrpl = res
+					best_fitness = population_fitness[0][1]
 
-				temp[i][j][1] = (1 + percent_change) * individual[i][j][1]
-				di = calculate_di(vg.get_generated_vectors(temp, paths=paths), temp, paths=paths, min_diffs_ratio=min_diffs_ratio)
-				if di > prev_di:
-					temp[i][j][1] = (1 - percent_change) * individual[i][j][1]
-					di = calculate_di(vg.get_generated_vectors(temp, paths=paths), temp, paths=paths, min_diffs_ratio=min_diffs_ratio)
-					if di > prev_di:
-						temp[i][j][1] = individual[i][j][1]
-	return temp
+					if true_vectors is not None:
+						best_error = vh.calculate_error(best_individual, true_vectors)
 
-def mutation2(individual, mutation_rate, percent_change, min_diffs_ratio, paths, verbose=False):
-	temp = copy.deepcopy(individual)
-	for i in range(len(temp)):
-		for j in range(len(temp)):
-			if i != j and not vh.is_missing(temp[i][j]) and random.random() <= mutation_rate:
-				if random.random() <= 0.5:
-					temp[i][j] *= (1 + percent_change) 
-				else:
-					temp[i][j] *= (1 - percent_change) 
-				
-	return temp
+			if true_vectors is not None:
+				best_errors.append(best_error)
+			
+			dis.append(1 / best_fitness)
 
-def mutation3(individual, mutation_rate, percent_change, min_diffs_ratio, paths, space_size, verbose=False):
-	temp = copy.deepcopy(individual)
-	for i in range(len(temp)):
-		for j in range(len(temp)):
-			if i != j and not vh.is_missing(temp[i][j]) and random.random() <= mutation_rate:
-				t = random.random()
-				if t <= 1/3:
-					temp[i][j] = vm.add_noise(temp[i][j], space_size, radius_noise=0, angle_noise=-percent_change)
-				elif t > 2/3:
-					temp[i][j] = vm.add_noise(temp[i][j], space_size, radius_noise=-percent_change, angle_noise=-percent_change)
-				else:
-					temp[i][j] = vm.add_noise(temp[i][j], space_size, radius_noise=-percent_change, angle_noise=0)
-	return temp
+			if true_vectors is not None:
+				print("[INFO] Best individual error:", best_error)
+			
+			print("[INFO] Number of missing vectors:", len(vh.get_missing(best_individual)))
+			print("[INFO] Best individual DI:", 1/best_fitness if best_fitness != float('inf') else 0)
+			
+			print('[INFO] Performing selection...')
+			selection = self.tournament_selection(population, population_fitness)
 
-def mutation4(individual, mutation_rate, percent_change, min_diffs_ratio, paths, space_size, verbose=False):
-	temp = copy.deepcopy(individual)
-	prev_di = calculate_di(vg.get_generated_vectors(temp, paths=paths), temp, paths=paths, min_diffs_ratio=min_diffs_ratio)
-	for i in range(len(temp)):
-		for j in range(len(temp)):
-			if i != j and not vh.is_missing(temp[i][j]) and random.random() <= mutation_rate:
-				#print('Before:', vh.beautify_matrix(temp))
-				temp[i][j] = vm.add_noise(individual[i][j], space_size, radius_noise=0, angle_noise=-percent_change)
-				#print('After:', vh.beautify_matrix(temp))
-				di = calculate_di(vg.get_generated_vectors(temp, paths=paths), temp, paths=paths, min_diffs_ratio=min_diffs_ratio)
-				if di > prev_di:
-					temp[i][j] = vm.add_noise(individual[i][j], space_size, radius_noise=-percent_change, angle_noise=-percent_change)
-					di = calculate_di(vg.get_generated_vectors(temp, paths=paths), temp, paths=paths, min_diffs_ratio=min_diffs_ratio)
-					if di > prev_di:
-						temp[i][j] = vm.add_noise(individual[i][j], space_size, radius_noise=-percent_change, angle_noise=0)
-						di = calculate_di(vg.get_generated_vectors(temp, paths=paths), temp, paths=paths, min_diffs_ratio=min_diffs_ratio)
-						if di > prev_di:
-							temp[i][j] = individual[i][j]
-	return temp
+			print('[INFO] Generating offspring...')
+			population, population_fitness = self.generate_offspring(selection)
+			#print("Fitness:", population_fitness)
 
-def mutation5(measured, individual, mutation_rate, percent_change, min_diffs_ratio, paths, verbose=False):
-	temp = copy.deepcopy(individual)
-	for i in range(len(temp)):
-		for j in range(len(temp)):
-			if i != j and vh.is_missing(temp[i][j]) and random.random() <= mutation_rate:
-				temp[i][j] = measured[i][j].copy()
-	return temp
+			if len(population) == 0:
+				raise Exception('Unable to generate offspring')
 
-def calculate_di2(generated, measured, min_diffs_ratio, paths, faster=False, verbose=False):
-	di = 0
-	generated = np.array(generated)
-	measured = np.array(measured)
-	num_vectors = len(vh.matrix2indices(measured))
-	if verbose:
-		print('Calculating DI')
-	
-	min_required_components = 2 #max(2, int(min_diffs_ratio * (len(measured) - 1)))
-	for i in range(len(generated)):
-		for j in range(len(generated)):
-			c1 = ""
-			curr = 0
-			if i != j and not vh.is_missing(measured[i][j]):
-				curr += np.sum((measured[i][j] - generated[i][j])**2)
-				num_perms = 1
-				
-				if verbose:
-					print("M" + str(i + 1) + str(j + 1) + ": " + f"sqrt(({measured[i][j]} - {generated[i][j]})**2", end="")
-					c1 += "M" + str(i + 1) + str(j + 1) + ": " + "sqrt(((M" + str(i + 1) + str(j + 1) + "(m) - " + "M" + str(i + 1) + str(j + 1) + "(g))**2 "
-				
-				for path in paths[(i, j)]:
-					if len(path) > 2 and vh.is_valid(path, measured):
-						if verbose:
-							print(f" + ({generated[i][j]} - (", end="")
-							c1 += " + (M" + str(i + 1) + str(j + 1) + "(g) - " + "M" + str(i + 1) + str(j + 1) + f"(g{','.join([str(p + 1) for p in path])}))**2 "
-						curr += np.sum((generated[i][j] - vg.get_generated_vector(path, measured, verbose=verbose))**2)
-						
-						if verbose:
-							print("))**2", end="")
-							
-						num_perms += 1
+		nnv = self.vector_generator.get_negative_vectors(best_individual)
 
-						if faster and num_perms >= min_required_components:
-							break
-
-				if num_perms < min_required_components:
-					#print('NOT ENOUGH PERMS:', num_perms[(i,j)])
-					return None
-
-				curr /= num_perms
-				di += math.sqrt(curr)
-
-				if verbose:
-					print(f') / {num_perms})')
-					c1 += f') / {num_perms})'
-					
-			if c1 != "":
-				print(c1)
-				
-	return di / num_vectors #(len(generated)**2 - len(generated))
-
-def calculate_di(di_type, measured, min_diffs_ratio, paths, enforce_deduction=True, num_deduction_components=2, faster=False, verbose=False):
-	if di_type == "generated":
-		deduced = vm.deduce_vectors(measured, paths, num_deduction_components, verbose=False, enforce_deduction=True)
-		generated = vg.get_generated_vectors(deduced, paths, num_deduction_components)
-		measured = copy.deepcopy(generated)#deduced)
-		num_vectors = len(measured) ** 2 - len(measured) #
-	else:
-		measured = vm.deduce_vectors(measured, paths, num_deduction_components, verbose=False, enforce_deduction=True)
-		generated = vg.get_generated_vectors(measured, paths, num_deduction_components)
-		num_vectors = len(vh.matrix2indices(measured))
-	
-	di = 0
-	
-	if verbose:
-		print('Calculating DI')
-	
-	min_required_components = max(2, int(min_diffs_ratio * (len(measured) - 1))) # set min_diffs_ratio to 0 to disable constraints on the number of required components
-	
-	for i in range(len(generated)):
-		for j in range(len(generated)):
-			c1 = ""
-			curr = 0
-			if i != j:
-				if (di_type == "generated" and vh.is_missing(measured[i][j])):
-					raise Exception('Some vectors are missing for DI calculation')
-				curr += np.sum((measured[i][j] - generated[i][j])**2)
-				num_perms = 1
-				
-				if verbose:
-					print("M" + str(i + 1) + str(j + 1) + ": " + f"sqrt(({measured[i][j]} - {generated[i][j]})**2", end="")
-					c1 += "M" + str(i + 1) + str(j + 1) + ": " + "sqrt(((M" + str(i + 1) + str(j + 1) + "(m) - " + "M" + str(i + 1) + str(j + 1) + "(g))**2 "
-				
-				for path in paths[(i, j)]:
-					if len(path) > 2 and ((di_type == "measured" and vh.is_valid(path, measured)) or di_type == "generated"):
-						if verbose:
-							print(f" + ({generated[i][j]} - (", end="")
-							c1 += " + (M" + str(i + 1) + str(j + 1) + "(g) - " + "M" + str(i + 1) + str(j + 1) + f"(g{','.join([str(p + 1) for p in path])}))**2 "
-
-						intermediary = vg.get_generated_vector(path, measured, verbose=verbose)
-						curr += np.sum((generated[i][j] - intermediary)**2)
-						
-						if verbose:
-							print("))**2", end="")
-							
-						num_perms += 1
-
-						if faster and num_perms >= min_required_components:
-							break
-
-				if num_perms < min_required_components:
-					return None
-
-				curr /= num_perms
-				di += math.sqrt(curr)
-
-				if verbose:
-					print(f') / {num_perms})')
-					c1 += f') / {num_perms})'
-					
-			if c1 != "":
-				print(c1)
-				
-	return di / num_vectors 
-
-#@jit(nopython=True)
-def calculate_di_measured(generated, measured, min_diffs_ratio, paths, faster=False, verbose=False):
-	di = 0
-	generated = np.array(generated)
-	measured = np.array(measured)
-	#temp = vh.generate_paths(len(generated))
-	#paths = vh.paths2dict(temp)
-	num_vectors = len(vh.matrix2indices(measured))
-	if verbose:
-		print('Calculating DI')
-	#deduced = deduce_vectors(measured)
-	#if deduced is None:
-		#raise Exception('Error in calculating DI')
-	min_required_components = max(2, int(min_diffs_ratio * (len(measured) - 1)))
-	for i in range(len(generated)):
-		for j in range(len(generated)):
-			c1, c2 = "", ""
-			curr = 0
-			if i != j and not vh.is_missing(measured[i][j]):
-				curr += np.sum((measured[i][j] - generated[i][j])**2)
-				num_perms = 1
-				if verbose:
-					#print("M" + str(i + 1) + str(j + 1) + ": " + "sqrt(((M" + str(i + 1) + str(j + 1) + "(m) - " + "M" + str(i + 1) + str(j + 1) + "(g))**2", end='')
-					print("M" + str(i + 1) + str(j + 1) + ": " + f"sqrt(({measured[i][j]} - {generated[i][j]})**2", end="")
-
-					c1 += "M" + str(i + 1) + str(j + 1) + ": " + "sqrt(((M" + str(i + 1) + str(j + 1) + "(m) - " + "M" + str(i + 1) + str(j + 1) + "(g))**2 "
-					#c2 += "M" + str(i + 1) + str(j + 1) + ": " + f"sqrt((({measured[i][j]} - {generated[i][j]})**2 "
-				for path in paths[(i, j)]:
-					if len(path) > 2 and vh.is_valid(path, measured):
-						if verbose:
-							#print(" + (M" + str(i + 1) + str(j + 1) + "(g) - " + "M" + str(i + 1) + str(j + 1) + f"(g{','.join([str(p + 1) for p in path])}))**2", end='')
-							print(f" + ({generated[i][j]} - (", end="")
-							c1 += " + (M" + str(i + 1) + str(j + 1) + "(g) - " + "M" + str(i + 1) + str(j + 1) + f"(g{','.join([str(p + 1) for p in path])}))**2 "
-							#c2 += f" + ({generated[i][j]} - " + f"{generated[i][j]}" + f"(g{','.join([str(p + 1) for p in path])}))**2 "
-						curr += np.sum((generated[i][j] - vg.get_generated_vector(path, measured, verbose=verbose))**2)
-						
-						if verbose:
-							print("))**2", end="")
-							
-						num_perms += 1
-
-						if faster and num_perms >= min_required_components:
-							break
-
-				if num_perms < min_required_components:
-					#print('NOT ENOUGH PERMS:', num_perms[(i,j)])
-					return None
-
-				curr /= num_perms
-				di += math.sqrt(curr)
-
-				if verbose:
-					print(f') / {num_perms})')
-					c1 += f') / {num_perms})'
-					#c2 += f') / {num_perms[(i, j)]})'
-			if c1 != "":
-				print(c1)
-				#print(c2)
-		#print(c2)
-
-	return di / num_vectors #(len(generated)**2 - len(generated))
+		return best_individual, best_fitness
