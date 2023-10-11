@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import math
 import copy
+<<<<<<< HEAD
 import random 
 import collections 
 
@@ -33,6 +34,32 @@ def calculate_error(m1, m2):
 
 def format_indices(indices, sort=True):
 	return "{" + ", ".join(['M' + str(i + 1) + '-' + str(j + 1) for (i, j) in sorted(indices)]) + '}'
+=======
+
+MAX_K = 2
+
+def vec_matrix2edge_index(matrix):
+	for i in range(len(matrix)):
+		for j in range(len(matrix)):
+			if i != j and not vh.is_missing(matrix[i][j]):
+				pass
+
+def replace_missing_vectors(vectors, value):
+	updated = copy.deepcopy(vectors)
+	for i in range(len(vectors)):
+		for j in range(len(vectors)):
+			if i == j:
+				updated[i][j] = [0, 0]
+			elif is_missing(vectors[i][j]):
+				updated[i][j] = [value, value]
+	return updated
+
+def format_indices(indices, sort=True):
+	return "{" + ", ".join([format_vector_name((i + 1, j + 1)) for (i, j) in sorted(indices)]) + '}'
+
+def format_vector_name(index):
+	return "-".join(["M" + str(i) for i in index])
+>>>>>>> 7480fb23d1238a2117bbe85158a4abba7eb1ea01
 
 def beautify_matrix(m):
 	output = '[\n'
@@ -78,6 +105,7 @@ def paths2dict(temp):
 			paths[(path[0], path[-1])].append(path)
 	return paths
 
+<<<<<<< HEAD
 def paths2len_dict(paths):
 	#print("Paths:", paths)
 	path_lens = {}
@@ -101,6 +129,14 @@ def get_orientations(coords, space_size, random=False):
 			orientations[i] = np.sum(np.concatenate([np.array(coords)[:i, :], np.array(coords)[i + 1:, :]]), axis=0) / (len(coords) - 1) - coords[i]
 	else:
 		orientations = (np.random.rand(len(coords), 2) * 2 - 1) * (space_size / 3)
+=======
+def get_orientations(coords):
+	orientations = np.zeros((len(coords), 2))
+
+	for i in range(len(orientations)):
+		orientations[i] = np.sum(np.concatenate([np.array(coords)[:i, :], np.array(coords)[i + 1:, :]]), axis=0) / (len(coords) - 1) - coords[i]
+
+>>>>>>> 7480fb23d1238a2117bbe85158a4abba7eb1ea01
 	return orientations
 
 def get_magnitude(vector):
@@ -127,6 +163,7 @@ def generate_paths(num_points, min_degree=1, max_degree=1):
 				
 	return paths
 
+<<<<<<< HEAD
 def draw_vectors(space_size, coords, vectors, title, max_angle=None, orientations=None, show=False, colors=None, boundaries=True, terminal_labels=True, figtitle=None):
 	plt.figure()
 	origin_x = np.repeat(coords[:, 0], len(coords)).reshape(-1,)
@@ -144,6 +181,32 @@ def draw_vectors(space_size, coords, vectors, title, max_angle=None, orientation
 			orientations_left[i] = find_vector_at_angle(orientations[i], -max_angle)
 			orientations_right[i] = find_vector_at_angle(orientations[i], max_angle)
 	
+=======
+def draw_vectors(space_size, coords, vectors, title, plot_orientations=False, max_angle=40, show=False):
+	origin_x = []
+	origin_y = []
+	vector_x = []
+	vector_y = []
+
+	if plot_orientations:
+		orientations = np.zeros((len(coords), 2))
+		orientations_left = np.zeros((len(coords), 2))
+		orientations_right = np.zeros((len(coords), 2))
+	
+	for i in range(len(vectors)):
+		if plot_orientations:
+			orientations[i] = np.sum(np.concatenate([np.array(coords)[:i, :], np.array(coords)[i + 1:, :]]), axis=0) / (len(coords) - 1) - coords[i]
+			orientations_left[i] = add_angle(orientations[i], -max_angle)
+			orientations_right[i] = add_angle(orientations[i], max_angle)
+		
+		for j in range(len(vectors)):
+			if i != j:
+				origin_x.append(coords[i][0])
+				origin_y.append(coords[i][1])
+				vector_x.append(vectors[i][j][0])
+				vector_y.append(vectors[i][j][1])
+	
+>>>>>>> 7480fb23d1238a2117bbe85158a4abba7eb1ea01
 	plt.title(title)
 	coords = np.array(coords)
 	
@@ -152,6 +215,7 @@ def draw_vectors(space_size, coords, vectors, title, max_angle=None, orientation
 	else:
 		plt.scatter(coords[:, 0], coords[:, 1], c=colors)
 
+<<<<<<< HEAD
 	if terminal_labels:
 		for i in range(len(coords)):
 			plt.annotate(f"M{i + 1}", (coords[i, 0], coords[i, 1]))
@@ -172,6 +236,21 @@ def draw_vectors(space_size, coords, vectors, title, max_angle=None, orientation
 	
 	if figtitle is not None:
 		plt.savefig(figtitle)
+=======
+	plt.quiver(origin_x, origin_y, vector_x, vector_y, angles='xy', scale_units='xy', scale=1)
+
+	if plot_orientations:
+		plt.quiver(np.array(coords)[:, 0], np.array(coords)[:, 1], orientations[:, 0], orientations[:, 1], angles='xy', scale_units='xy', scale=1, color="red")
+		plt.quiver(np.array(coords)[:, 0], np.array(coords)[:, 1], orientations_left[:, 0], orientations_left[:, 1], angles='xy', scale_units='xy', scale=1, color="green")
+		plt.quiver(np.array(coords)[:, 0], np.array(coords)[:, 1], orientations_right[:, 0], orientations_right[:, 1], angles='xy', scale_units='xy', scale=1, color="blue")
+
+	plt.axis('equal')  #<-- set the axes to the same scale
+	plt.xlim(0, space_size)
+	plt.ylim(0, space_size)
+	plt.grid(b=True, which='major') #<-- plot grid lines
+	if show:
+		plt.show()
+>>>>>>> 7480fb23d1238a2117bbe85158a4abba7eb1ea01
 
 def add_angle(node, angle):
 	r = math.sqrt(node[0]**2 + node[1]**2)
@@ -181,20 +260,29 @@ def add_angle(node, angle):
 		r * math.cos(x_angle + angle * math.pi / 180), 
 		r * math.sin(y_angle )#+ angle * math.pi / 180)# + angle)
 	)
+<<<<<<< HEAD
 
 def find_vector_at_angle(vector, angle):
 	angle = angle * np.pi / 180
 	#return np.cos(angle * np.pi / 180) / vector * np.linalg.norm(vector)
 	return np.dot(np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]), vector)
+=======
+>>>>>>> 7480fb23d1238a2117bbe85158a4abba7eb1ea01
 
 def get_cmap(n, name='hsv'):
     '''Returns a function that maps each index in 0, 1, ..., n-1 to a distinct 
     RGB color; the keyword argument name must be a standard mpl colormap name.'''
     return plt.cm.get_cmap(name, n)
 
+<<<<<<< HEAD
 def generate_paths_of_length(num_points, length):
 	node_ids = [i for i in range(num_points)]
 	pairs = list(permutations(node_ids, 2))
+=======
+def generate_paths_of_length(num_points, length, id_pairs=None):
+	node_ids = [i for i in range(num_points)]
+	pairs = list(permutations(node_ids, 2)) if not id_pairs else id_pairs
+>>>>>>> 7480fb23d1238a2117bbe85158a4abba7eb1ea01
 	paths = {pair: [] for pair in pairs}
 
 	for i, pair in enumerate(pairs):
@@ -247,6 +335,7 @@ def plot_errors(df, noise):
 	ax.set_title(f"GA vs. Other Methods (Noise Level = {noise}%)")
 	ax.set_ylabel("Positioning error")
 	plt.show()
+<<<<<<< HEAD
 
 def get_dims(space_size, max_range):
     x = min(space_size * np.sqrt(2), max_range)
@@ -320,3 +409,5 @@ def get_origin_vectors(vectors, anchor_coords):
 		origins[i] /= nums[i]
 	return origins
 				
+=======
+>>>>>>> 7480fb23d1238a2117bbe85158a4abba7eb1ea01

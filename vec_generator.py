@@ -116,6 +116,7 @@ class VectorGenerator:
 		inference_path_lengths = collections.defaultdict(int)
 		# keep deducing until no vectors could be inferred
 
+<<<<<<< HEAD
 		while num_inferred_vectors > 0:
 			num_inferred_vectors = 0
 			for i in range(len(inferred)):
@@ -160,6 +161,16 @@ class VectorGenerator:
 		num_missing_vectors = 0
 		num_inferred_vectors = float('inf')
 		# keep deducing until no vectors could be inferred
+=======
+def coords2vectors(coords):
+	vectors = np.zeros((len(coords), len(coords), 2))
+
+	for i in range(len(coords)):
+		for j in range(len(coords)):
+			vectors[i][j] = coords[j] - coords[i] 
+
+	return vectors 
+>>>>>>> 7480fb23d1238a2117bbe85158a4abba7eb1ea01
 
 		while num_inferred_vectors > 0:
 			num_inferred_vectors = 0
