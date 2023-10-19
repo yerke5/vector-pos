@@ -4,96 +4,23 @@ import math
 import vec_helper as vh
 import vec_generator as vg
 import random
-<<<<<<< HEAD
 import collections 
-=======
 
-def deduce_vectors(measured, paths, num_deduction_components, verbose=False, enforce_deduction=False):
-	#print('Incomplete measured:\n', measured)
-	deduced = copy.deepcopy(measured)
-	for i in range(len(measured)):
-		for j in range(len(measured)):
-			if i != j and vh.is_missing(measured[i][j]):
-				#print('Deducing', (i, j))
-				deduced[i][j] = deduce_vector(i, j, deduced, paths[(i, j)], num_deduction_components, verbose=verbose)
-
-				if enforce_deduction and vh.is_missing(deduced[i][j]):
-					return None
-	return deduced 
-
-def deduce_vector(i, j, measured, paths, num_deduction_components, space_size=None, verbose=True):
-	#paths = vh.generate_paths(len(measured), id_pairs=[(i, j)])
+def add_noise(node, space_size, radius_noise=.2, angle_noise=.2, mean_radius_noise=0, mean_angle_noise=0):
+	r = math.sqrt(node[0]**2 + node[1]**2)
+	# x_angle = math.acos(node[0] / r)
+	# y_angle = math.asin(node[1] / r)
+	theta = math.acos(node[0] / r)
+	if node[1] < 0:
+		theta *= -1
 	
-	# remove pairs
-	paths = [x for x in paths if len(x) > 2]
-
-	#print('Filtered paths:', paths)
-	if len(paths) < 2: # used to be 2
-		return None  
-
-	components = []
-	cids = []
-	vecstrs = []
-	for path in paths:
-		#print('Trying path', path)
-		new_vector = np.array([0.0, 0.0])
-		cid = []
-		vecstr = []
-		broke = False
-		for k in range(1, len(path)): 
-			if not vh.is_missing(measured[path[k - 1]][path[k]]):
-				#print('Found', path[k - 1], '-', path[k])
-				new_vector += measured[path[k - 1]][path[k]]
-				cid.append("M" + str(path[k - 1] + 1) + str(path[k] + 1))
-				vecstr.append(str(measured[path[k - 1]][path[k]]))
-				#j += 1
-			else:
-				broke = True 
-				break
-
-		if not broke:#j == len(path) - 1:
-			#print('Success! The new vector is', new_vector)
-			components.append(new_vector.copy())
-			cids.append(", ".join(cid))
-			vecstrs.append("(" + " + ".join(vecstr) + ")")
-			#print('Components:', components)
-			#print('CIDs:', cids)
-
-	#print('Components:', components)
-	if len(components) < num_deduction_components: # used to be 2 
-		return None  
-
-	if verbose:
-		#print("[DEDUCED] M" + str(i + 1) + str(j + 1) + '(g):', 'sum(' + '; '.join(cids) + ') / ' + str(len(cids)))
-		print("[DEDUCED]     M" + str(i + 1) + str(j + 1) + '(g):', ' + '.join(vecstrs) + ') / ' + str(len(cids)) + ' =', np.mean(components, axis=0))
-	
-	#print('Success! The new vector is', np.mean(components, axis=0))
-	return np.mean(components, axis=0)
->>>>>>> 7480fb23d1238a2117bbe85158a4abba7eb1ea01
-
-def add_noise(node, space_size, radius_noise=.2, angle_noise=.2):
-	r, x_angle, y_angle = get_radial_vec(node) #math.sqrt(node[0]**2 + node[1]**2)
-	#x_angle = math.acos(node[0] / r)
-	#y_angle = math.asin(node[1] / r)
 	return (
-		r * (1 + np.random.normal() * radius_noise) * math.cos(x_angle * (1 + np.random.normal() * angle_noise)), 
-		r * (1 + np.random.normal() * radius_noise) * math.sin(y_angle * (1 + np.random.normal() * angle_noise))
+		r * (1 + np.random.normal(loc=mean_radius_noise, scale=radius_noise)) * np.cos(theta * (1 + np.random.normal(loc=mean_angle_noise, scale=angle_noise))),#r * (1 + np.random.normal() * radius_noise) * math.cos(x_angle * (1 + np.random.normal() * angle_noise)), 
+		r * (1 + np.random.normal(loc=mean_radius_noise, scale=radius_noise)) * np.sin(theta * (1 + np.random.normal(loc=mean_angle_noise, scale=angle_noise)))#r * (1 + np.random.normal() * radius_noise) * math.sin(y_angle * (1 + np.random.normal() * angle_noise))
 	)
 
-<<<<<<< HEAD
 def drop_unseen_vectors(vectors, orientations, max_angle=40, max_range=30, verbose=False):
 	filtered = copy.deepcopy(vectors)
-=======
-def get_radial_vec(vector):
-	r = np.sqrt(np.sum(np.array(vector)**2))
-	x_angle, y_angle = math.acos(vector[0] / r), math.asin(vector[1] / r)
-	return r, x_angle, y_angle
-
-def drop_unseen_vectors(vectors, coords, max_angle=40, max_range=30, verbose=False):
-	filtered = copy.deepcopy(vectors)
-	orientations = vh.get_orientations(coords)
-	
->>>>>>> 7480fb23d1238a2117bbe85158a4abba7eb1ea01
 	if verbose:
 		print('Orientations:', orientations)
 	
@@ -107,7 +34,7 @@ def drop_unseen_vectors(vectors, coords, max_angle=40, max_range=30, verbose=Fal
 					if verbose:
 						print(i, '->', j, ':', curr_angle, 'valid:', curr_angle <= max_angle)
 					if curr_angle > max_angle:
-						filtered[i][j] = np.nan
+						filtered[i][j] = np.nan 
 
 	return filtered
 
@@ -174,17 +101,6 @@ def remove_inconsistent_vectors(vectors, max_infer_components, min_diffs_ratio, 
 	#print("Restored", ", ".join(["M" + str(x[0] + 1) + str(x[1] + 1) for x in restored]))
 	return temp
 
-<<<<<<< HEAD
-=======
-def is_deducible(i1, i2, vectors, num_deduction_components):
-	t = 0
-	for k in range(len(vectors)):
-		if k != i1 and k != i2:
-			if not vh.is_missing(vectors[i1][k]) and not vh.is_missing(vectors[k][i2]):
-				t += 1
-	return t >= num_deduction_components
-
->>>>>>> 7480fb23d1238a2117bbe85158a4abba7eb1ea01
 def get_consistent_vectors_simple(vectors):
 	nodes = set([i for i in range(len(vectors))])
 	temp = np.zeros((len(vectors), len(vectors), 2))
@@ -252,115 +168,24 @@ def get_consistent_vectors2(vectors, paths, max_infer_components):
 	print('Added vectors for deducability:', ', '.join(sorted(["M" + str(x[0]) + '-' + str(x[1]) for x in for_inference])))
 	return temp
 
-<<<<<<< HEAD
-def inject_noise(original, noise_ratio, space_size, coords, angle_noise, radius_noise, num_anchors=0):
+def inject_noise(original, noise_ratio, space_size, coords, angle_noise, radius_noise, num_anchors=0, mean_angle_noise=0, mean_radius_noise=0):
 	#print("R:", noise_ratio, "delta_r:", angle_noise)
 	pairs = []
 	for i in range(len(coords) - num_anchors):
 		for j in range(len(coords) - num_anchors): # the last num_anchors nodes are anchors
-=======
-def get_consistent_vectors(vectors, pair_paths, num_deduction_components, num_vectors=4, max_shapes=30, id_pairs=None):
-	paths = vh.generate_paths_of_length(len(vectors), num_vectors, id_pairs=id_pairs)
-	temp = np.zeros((len(vectors), len(vectors), 2))
-	temp[:, :] = np.nan
-	shapes = dict()
-	
-	pairs = list(paths.keys())
-	random.shuffle(pairs)
-
-	k = 0
-	for pair in pairs:
-		random.shuffle(paths[pair])
-		for path in paths[pair]:
-			if vh.is_valid(path, vectors):
-				generated = np.array([0, 0])
-				for i in range(1, len(path)):
-					generated = generated + vectors[path[i - 1]][path[i]]
-				
-				diff = np.sum((vectors[pair[0]][pair[1]] - generated)**2)
-
-				shapes[path] = np.sqrt(diff) 
-				k += 1
-
-			if k >= max_shapes:
-				break
-			
-	for i in range(len(temp)):
-		temp[i][i] = [0, 0]
-
-	shapes = list(sorted(shapes.items(), key=lambda item: item[1]))
-	
-	for (path, diff) in shapes:
-		if diff == 0:
-			for i in range(1, len(path)):
-				temp[path[i - 1]][path[i]] = vectors[path[i - 1]][path[i]].copy()
-				#consistent.add((path[i - 1], path[i]))
-		else:
-			deduced = deduce_vectors(temp, pair_paths, num_deduction_components, enforce_deduction=True)
-			if deduced is None:
-				for i in range(1, len(path)):
-					temp[path[i - 1]][path[i]] = vectors[path[i - 1]][path[i]].copy()
-			else:
-				break 
-
-	return temp
-
-def get_supergenes(vectors, pair_paths, num_deduction_components, num_vectors=4, id_pairs=None, max_num=20):
-	paths = vh.generate_paths_of_length(len(vectors), num_vectors, id_pairs=id_pairs)
-	shapes = dict()
-	k = 0
-	for pair in paths:
-		for path in paths[pair]:
-			generated = np.array([0, 0])
-			for i in range(1, len(path)):
-				generated = generated + vectors[path[i - 1]][path[i]]
-			
-			diff = np.sum((vectors[pair[0]][pair[1]] - generated)**2)
-			shapes[path] = np.sqrt(diff) 
-
-			if diff == 0:
-				k += 1
-
-			if k >= max_num:
-				break
-			
-	shapes = list(sorted(shapes.items(), key=lambda item: item[1]))
-	
-	supergenes = set()
-	for (path, diff) in shapes:
-		if diff == 0:
-			for i in range(1, len(path)):
-				supergenes.add((path[i - 1], path[i]))
-
-	return supergenes
-
-def inject_noise(original, noise_ratio, space_size, coords, angle_noise, radius_noise):
-	pairs = []
-	for i in range(len(coords)):
-		for j in range(len(coords)):
->>>>>>> 7480fb23d1238a2117bbe85158a4abba7eb1ea01
 			if i != j and not vh.is_missing(original[i][j]):
 				pairs.append((i, j))
 
 	vectors = copy.deepcopy(original)
 	pairs = random.sample(pairs, int(noise_ratio * (len(vh.matrix2indices(original)))))
-<<<<<<< HEAD
 	
 	for (i, j) in pairs:
-		noisy_vector = list(add_noise(vectors[i][j], space_size, angle_noise=angle_noise, radius_noise=radius_noise))
+		noisy_vector = list(add_noise(vectors[i][j], space_size, angle_noise=angle_noise, radius_noise=radius_noise, mean_angle_noise=mean_angle_noise, mean_radius_noise=mean_radius_noise))
 		# DON"T FORGET ABOUT PUTTING BOUNDS HERE
 		# noisy_vector[0] = min(space_size - coords[i][0], noisy_vector[0])
 		# noisy_vector[1] = min(space_size - coords[i][1], noisy_vector[1])
 		# noisy_vector[0] = max(-coords[i][0], noisy_vector[0])
 		# noisy_vector[1] = max(-coords[i][1], noisy_vector[1])
-=======
-	for (i, j) in pairs:
-		noisy_vector = list(add_noise(vectors[i][j], space_size, angle_noise=angle_noise, radius_noise=radius_noise))
-		noisy_vector[0] = min(space_size - coords[i][0], noisy_vector[0])
-		noisy_vector[1] = min(space_size - coords[i][1], noisy_vector[1])
-		noisy_vector[0] = max(-coords[i][0], noisy_vector[0])
-		noisy_vector[1] = max(-coords[i][1], noisy_vector[1])
->>>>>>> 7480fb23d1238a2117bbe85158a4abba7eb1ea01
 		vectors[i][j] = noisy_vector
 	return vectors
 

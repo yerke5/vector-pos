@@ -34,7 +34,7 @@ class GA:
 		missing_vectors_weight=.2,
 		verbose=False,
 		init_consistent_shapes_ratio = .3,
-		init_consistency_shape_delta=.05
+		init_consistency_shape_delta=1e-6
 	):
 		self.population_size = population_size
 		self.vector_generator = vecgen
@@ -66,8 +66,8 @@ class GA:
 		if self.vector_generator.params.consistency_paths is not None:
 			k = 0
 			while len(population) < self.population_size * self.init_consistent_shapes_ratio and k < 100:
-				consistent_vectors = self.consistency_checker.get_consistency_shapes(vectors, max_shapes=self.max_init_consistency_shapes, delta=self.init_consistency_shape_delta)
-				
+				consistent_vectors = self.consistency_checker.get_consistency_shapes(vectors, max_shapes=self.max_init_consistency_shapes)
+				#print("Consistent vectors in initial population:", vh.beautify_matrix(consistent_vectors))
 				# add random missing vectors
 				rvs = self.random_vectors(available_pairs)
 				for rv in rvs:
@@ -136,7 +136,8 @@ class GA:
 		if len(selection) < 2:
 			return selection
 		offspring = []
-
+		
+		vh.log(f"Size of offspring: {len(selection)}")
 		# preserve the elite
 		for i in range(self.num_elites):
 			di = self.calculate_di(selection[i])
@@ -194,12 +195,26 @@ class GA:
 		return offspring, sorted(population_fitness.items(), key=operator.itemgetter(1), reverse=True)
 
 	def crossover2(self, p1, p2, perfect_genes1, perfect_genes2):
+		# print("Perfect genes 1:", perfect_genes1)
+		# print("Perfect genes 2:", perfect_genes2)
 		if random.random() < self.crossover_rate:
 			i1 = set(vh.matrix2indices(p1))
 			i2 = set(vh.matrix2indices(p2))
 
-			if not i1 or not i2:
-				raise Exception("Found empty chromosomes; something went wrong")
+			if not i1 and not i2:
+				return []
+			
+			if not i1:
+				return [copy.deepcopy(p2), copy.deepcopy(p2)]
+			
+			if not i2:
+				return [copy.deepcopy(p1), copy.deepcopy(p1)]
+			
+			# if not i1 or not i2:
+			# 	# print(i1)
+			# 	# print(i2)
+			# 	# raise Exception("Found empty chromosomes; something went wrong")
+			# 	return []
 			
 			v1 = list(i1 - set(perfect_genes1))
 			v2 = list(i2 - set(perfect_genes2))
@@ -281,7 +296,7 @@ class GA:
 
 		if random.random() <= self.mutation_rate:
 			#if random.random() < .7:
-				supergenes = self.consistency_checker.get_supergenes(individual)
+				supergenes = self.consistency_checker.get_supergenes(individual, max_shapes=self.max_supergene_shapes)
 				
 				# select gene for deletion
 				missing = set(vh.get_missing(individual))
@@ -399,19 +414,28 @@ class GA:
 			print('[INFO] Calculating population fitness')
 			
 			if best_individual is None or (population_fitness[0][1] > 0 and 1 / population_fitness[0][1] < (1 / best_fitness if best_fitness > 0 else float('inf'))):
-				res = self.vector_generator.infer_vectors(population[population_fitness[0][0]]) #self.vector_generator.get_inferrable_vectors(population[population_fitness[0][0]], coverage=None)
+				# ---- based on inference ---
+				# res = self.vector_generator.infer_vectors(population[population_fitness[0][0]]) #self.vector_generator.get_inferrable_vectors(population[population_fitness[0][0]], coverage=None) 
 
-				if res is None:
-					if not self.vector_generator.params.enforce_inference:
-						print('[WARNING] Since deduction was not enforced, some vectors will be missing')
-					else:
-						raise Exception('Violation of enforcing deduction detected, which means that something went wrong')
-				else:
-					best_individual, mrpl = res
-					best_fitness = population_fitness[0][1]
+				# if res is None:
+				# 	if not self.vector_generator.params.enforce_inference:
+				# 		print('[WARNING] Since deduction was not enforced, some vectors will be missing')
+				# 	else:
+				# 		raise Exception('Violation of enforcing deduction detected, which means that something went wrong')
+				# else:
+				# 	best_individual, mrpl = res
+				# 	best_fitness = population_fitness[0][1]
 
-					if true_vectors is not None:
-						best_error = vh.calculate_error(best_individual, true_vectors)
+				# 	if true_vectors is not None:
+				# 		best_error = vh.calculate_error(best_individual, true_vectors)
+				# ---- end based on inference ------
+
+				best_individual = self.vector_generator.get_generated_vectors(population[population_fitness[0][0]])
+				nnv = self.vector_generator.get_negative_vectors(best_individual)
+				best_fitness = population_fitness[0][1]
+
+				if true_vectors is not None:
+					best_error = vh.calculate_error(best_individual, true_vectors)
 
 			if true_vectors is not None:
 				best_errors.append(best_error)
@@ -434,6 +458,7 @@ class GA:
 			if len(population) == 0:
 				raise Exception('Unable to generate offspring')
 
-		nnv = self.vector_generator.get_negative_vectors(best_individual)
+		# best_individual, _ = self.vector_generator.infer_vectors(best_individual)
+		# nnv = self.vector_generator.get_negative_vectors(best_individual)
 
 		return best_individual, best_fitness

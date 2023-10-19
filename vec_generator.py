@@ -22,8 +22,6 @@ class VectorGenerator:
 
 		#print('Number of generation_paths:', perms)
 		for pair in self.params.generation_paths:
-			random.shuffle(self.params.generation_paths[pair])
-			
 			if self.verbose and not vh.is_missing(measured[pair[0]][pair[1]]):
 				print("[NOT DEDUCED] M" + str(pair[0] + 1) + str(pair[1] + 1) + "(g): ", end="")
 
@@ -116,17 +114,18 @@ class VectorGenerator:
 		inference_path_lengths = collections.defaultdict(int)
 		# keep deducing until no vectors could be inferred
 
-<<<<<<< HEAD
 		while num_inferred_vectors > 0:
 			num_inferred_vectors = 0
 			for i in range(len(inferred)):
 				for j in range(len(inferred)):
-					if i != j and vh.is_missing(inferred[i][j]): # change ro inferred
+					if i != j and (generation_mode or vh.is_missing(inferred[i][j])): # change ro inferred
 						degree0 = False
 						try:
 							res = self.infer_vector(measured if not self.sequential else inferred, self.params.generation_paths[(i, j)], generation_mode=generation_mode) # change ro inferred
 						except:
 							print(i, j, len(measured))
+							print(self.params.generation_paths[(i, j)])
+							raise Exception("Something went wrong during inference")
 						if res is not None:
 							inferred[i][j], rmpl = res
 							
@@ -158,43 +157,70 @@ class VectorGenerator:
 
 	def get_inferrable_vectors(self, vectors, coverage=None):
 		inferred = copy.deepcopy(vectors)
-		num_missing_vectors = 0
 		num_inferred_vectors = float('inf')
 		# keep deducing until no vectors could be inferred
-=======
-def coords2vectors(coords):
-	vectors = np.zeros((len(coords), len(coords), 2))
-
-	for i in range(len(coords)):
-		for j in range(len(coords)):
-			vectors[i][j] = coords[j] - coords[i] 
-
-	return vectors 
->>>>>>> 7480fb23d1238a2117bbe85158a4abba7eb1ea01
 
 		while num_inferred_vectors > 0:
 			num_inferred_vectors = 0
+			num_missing_vectors = len(vectors) * (len(vectors) - 1)
 			for i in range(len(vectors)):
 				for j in range(len(vectors)):
-					if i != j and vh.is_missing(inferred[i][j]):
-						was_inferred = False
-						res = self.infer_vector(inferred, self.params.generation_paths[(i, j)])
-						if res is None:
-							num_missing_vectors += 1
-						else:
-							inferred[i][j], mrpl = res
-							was_inferred = True 
+					if i != j:
+						if vh.is_missing(inferred[i][j]):
+							was_inferred = False
+							res = self.infer_vector(inferred, self.params.generation_paths[(i, j)])
+							if res is not None:
+								#print(f"INFERRED M{i+1}-M{j+1}")
+								inferred[i][j], mrpl = res
+								was_inferred = True 
 
-						if not was_inferred and not vh.is_missing(inferred[j][i]):
-							inferred[i][j] = -1 * inferred[j][i]
-							was_inferred = True 
-						
-						if was_inferred:
-							if coverage is not None:
-								coverage[i][j] = True
-							num_inferred_vectors += 1
+							if not was_inferred and not vh.is_missing(inferred[j][i]):
+								inferred[i][j] = -1 * inferred[j][i]
+								was_inferred = True 
+							
+							if was_inferred:
+								if coverage is not None:
+									coverage[i][j] = True
+								num_inferred_vectors += 1
+						else:
+							num_missing_vectors -= 1
 		
 		return inferred, num_missing_vectors
+
+	def get_inferrable_vectors_working(self, vectors, coverage=None):
+		deduced = copy.deepcopy(vectors)
+		num_missing_vectors = 0
+		num_deduced_vectors = float('inf')
+		# keep deducing until no vectors could be deduced
+
+		while num_deduced_vectors > 0:
+			num_deduced_vectors = 0
+			for i in range(len(vectors)):
+				for j in range(len(vectors)):
+					if i != j and vh.is_missing(deduced[i][j]):
+						was_deduced = False
+						if not vh.is_missing(deduced[j][i]):
+							deduced[i][j] = -1 * deduced[j][i]
+							was_deduced = True 
+						else:
+							res = self.infer_vector(deduced, self.params.generation_paths[(i, j)])
+							if res is None:
+								num_missing_vectors += 1
+							else:
+								deduced[i][j], _ = res
+								was_deduced = True 
+
+						if was_deduced:
+							#print(f"!!!DEDUCED M{i+1}M{j+1}")
+							#print(vh.beautify_matrix(deduced))
+							if coverage is not None:
+								coverage[i][j] = True
+							num_deduced_vectors += 1
+					# elif i != j:
+					# 	print(f"M{i+1}M{j+1} is NOT missing")
+			#print("Num deduced vectors in deduced:", num_deduced_vectors)
+		
+		return deduced, num_missing_vectors
 
 	def infer_vector(self, measured, paths, generation_mode=False):
 		assert self.params.max_infer_components >= 1
@@ -237,11 +263,44 @@ def coords2vectors(coords):
 		if generation_mode:
 			x = list(paths)[0]
 			if not vh.is_missing(measured[x[0]][x[-1]]):
-				print(f"Adding measured vector to {x[0]}-{x[-1]}")
+				#print(f"Adding measured vector to {x[0]}-{x[-1]}")
 				dv += measured[x[0]][x[-1]]
 				ndc += 1
 
 		return dv / ndc, reached_max_ipl
+
+	def infer_vector_working(self, measured, paths, generation_mode=False):
+		# categorise paths by length
+		path_lens, min_deduct_path_length, max_dpl = vh.paths2len_dict(paths)
+		ndc = 0
+		dv = np.zeros(2,).astype(np.float32)
+		
+		for deduct_path_length in range(min_deduct_path_length, max_dpl + 1):
+			# if deduct_path_length > 3:
+			# 	print(f"Elevating deduction level to {deduct_path_length}!")
+			for path in path_lens[deduct_path_length]:
+				
+				new_vector = np.array([0.0, 0.0])
+				broke = False
+				for k in range(1, len(path)): 
+					if not vh.is_missing(measured[path[k - 1]][path[k]]):
+						new_vector += measured[path[k - 1]][path[k]]
+					else:
+						broke = True 
+						break
+
+				if not broke:
+					dv += new_vector
+					ndc += 1
+				
+			if ndc >= self.params.max_infer_components:
+				break 
+		
+		if ndc < 2:
+			return None
+		if generation_mode:
+			print('Inferred in generation mode!!!!!', dv/ndc)
+		return dv / ndc, max_dpl
 
 	def is_inferable(self, i1, i2, vectors):
 		t = 0
@@ -255,7 +314,7 @@ def coords2vectors(coords):
 		n = 0
 		for i in range(len(vectors)):
 			for j in range(len(vectors)):
-				if vh.is_missing(vectors[i][j]) and not vh.is_missing(vectors[j][i]):
+				if i != j and vh.is_missing(vectors[i][j]) and not vh.is_missing(vectors[j][i]):
 					vectors[i][j] = -1 * vectors[j][i]
 					n += 1
 		return n
