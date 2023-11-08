@@ -20,24 +20,11 @@ class VectorGenerator:
 		num_perms = dict()
 		strpaths = dict()
 
-		#print('Number of generation_paths:', perms)
 		for pair in self.params.generation_paths:
 			if self.verbose and not vh.is_missing(measured[pair[0]][pair[1]]):
 				print("[NOT DEDUCED] M" + str(pair[0] + 1) + str(pair[1] + 1) + "(g): ", end="")
-
 			if not vh.is_missing(measured[pair[0]][pair[1]]):
-				# # start out with the measured vector
-				# generated[pair[0]][pair[-1]] = copy.deepcopy(measured[pair[0]][pair[1]])
-				# if not pair in num_perms:
-				# 	num_perms[pair] = 1
-
-				# 	if self.verbose:
-				# 		strpaths[pair] = [''.join([str(p + 1) for p in path])]
-				
-				# add intermediate generated vectors
 				for path in self.params.generation_paths[pair]:
-					# if len(path) < 3:
-					# 	continue 
 					gen = self.get_generated_vector(path, measured) 
 					
 					if gen is not None:
@@ -58,30 +45,23 @@ class VectorGenerator:
 					inferred, mrpl = res
 					generated[pair[0]][pair[1]] = inferred.copy()
 				else:
-					#print("Couldn't infer vector!", pair)
 					generated[pair[0]][pair[1]] = np.nan
 		
 				num_perms[pair] = 1
-				#generated[path[0]][path[-1]] /= (perms + 1)
-				#print(f"After {path[0] + 1} - {path[-1] + 1}: ", generated[path[0]][path[-1]])
-				#print('-' * 50)
-
+				
 			if not vh.is_missing(measured[pair[0]][pair[1]]):
 				generated[pair[0]][pair[1]] /= num_perms[pair]
 				if self.verbose:
 					print("/", num_perms[pair], '=', generated[pair[0]][pair[1]])
 
 		# infer missing vectors anyway
-		#print("Number of missing vectors in generated version:", len(vh.get_missing(generated)))
-		#generated = vg.get_inferrable_vectors(generated, generation_paths, max_infer_components, self.params.enforce_inference=self.params.enforce_inference)
 		if self.verbose:
 			for i in range(len(generated)):
 				for j in range(len(generated)):
 					if i != j:
 						if (i, j) in strpaths:
 							print("[NOT DEDUCED] M" + str(i + 1) + str(j + 1) + "(g): sum(" + "; ".join(strpaths[(i, j)]) + ") / " + str(num_perms[(i, j)]))
-							#pass
-						#generated[i][j] = generated[i][j] / num_perms[(i, j)]#(num_perms)#(perms + 1)
+							
 		return generated
 
 	def get_generated_vector(self, path, measured):
@@ -108,12 +88,10 @@ class VectorGenerator:
 		return new_vector
 
 	def infer_vectors(self, measured, generation_mode=False):
-		#print('Incomplete measured:\n', measured)
 		inferred = copy.deepcopy(measured)
 		num_inferred_vectors = float('inf')
 		inference_path_lengths = collections.defaultdict(int)
-		# keep deducing until no vectors could be inferred
-
+		
 		while num_inferred_vectors > 0:
 			num_inferred_vectors = 0
 			for i in range(len(inferred)):
@@ -170,7 +148,6 @@ class VectorGenerator:
 							was_inferred = False
 							res = self.infer_vector(inferred, self.params.generation_paths[(i, j)])
 							if res is not None:
-								#print(f"INFERRED M{i+1}-M{j+1}")
 								inferred[i][j], mrpl = res
 								was_inferred = True 
 
@@ -187,56 +164,16 @@ class VectorGenerator:
 		
 		return inferred, num_missing_vectors
 
-	def get_inferrable_vectors_working(self, vectors, coverage=None):
-		deduced = copy.deepcopy(vectors)
-		num_missing_vectors = 0
-		num_deduced_vectors = float('inf')
-		# keep deducing until no vectors could be deduced
-
-		while num_deduced_vectors > 0:
-			num_deduced_vectors = 0
-			for i in range(len(vectors)):
-				for j in range(len(vectors)):
-					if i != j and vh.is_missing(deduced[i][j]):
-						was_deduced = False
-						if not vh.is_missing(deduced[j][i]):
-							deduced[i][j] = -1 * deduced[j][i]
-							was_deduced = True 
-						else:
-							res = self.infer_vector(deduced, self.params.generation_paths[(i, j)])
-							if res is None:
-								num_missing_vectors += 1
-							else:
-								deduced[i][j], _ = res
-								was_deduced = True 
-
-						if was_deduced:
-							#print(f"!!!DEDUCED M{i+1}M{j+1}")
-							#print(vh.beautify_matrix(deduced))
-							if coverage is not None:
-								coverage[i][j] = True
-							num_deduced_vectors += 1
-					# elif i != j:
-					# 	print(f"M{i+1}M{j+1} is NOT missing")
-			#print("Num deduced vectors in deduced:", num_deduced_vectors)
-		
-		return deduced, num_missing_vectors
-
 	def infer_vector(self, measured, paths, generation_mode=False):
 		assert self.params.max_infer_components >= 1
 		# categorise paths by length
 		path_lens, min_ipl, max_ipl = vh.paths2len_dict(paths)
-		#print('Min ipl:', min_ipl, "max ipl:", max_ipl)
-		#print(path_lens)
-		#print(paths)
 		ndc = 0
 		dv = np.zeros(2,).astype(np.float32)
 		reached_max_ipl = -1
 		
 		for inference_path_length in range(min_ipl, max_ipl + 1):
 			
-			# if inference_path_length > 3:
-			# 	print(f"Elevating inference level to {inference_path_length}!")
 			for path in path_lens[inference_path_length]:
 				new_vector = np.array([0.0, 0.0])
 				broke = False
@@ -250,57 +187,23 @@ class VectorGenerator:
 				if not broke:
 					dv += new_vector
 					ndc += 1
+					reached_max_ipl = max(inference_path_length, reached_max_ipl)
 				
 			if ndc >= self.params.max_infer_components:
 				if reached_max_ipl == -1:
 					reached_max_ipl = inference_path_length
 				break 
-			reached_max_ipl = max(inference_path_length, reached_max_ipl)
-
+			
 		if ndc == 0: # used to be 2 
 			return None  
 
 		if generation_mode:
 			x = list(paths)[0]
 			if not vh.is_missing(measured[x[0]][x[-1]]):
-				#print(f"Adding measured vector to {x[0]}-{x[-1]}")
 				dv += measured[x[0]][x[-1]]
 				ndc += 1
 
 		return dv / ndc, reached_max_ipl
-
-	def infer_vector_working(self, measured, paths, generation_mode=False):
-		# categorise paths by length
-		path_lens, min_deduct_path_length, max_dpl = vh.paths2len_dict(paths)
-		ndc = 0
-		dv = np.zeros(2,).astype(np.float32)
-		
-		for deduct_path_length in range(min_deduct_path_length, max_dpl + 1):
-			# if deduct_path_length > 3:
-			# 	print(f"Elevating deduction level to {deduct_path_length}!")
-			for path in path_lens[deduct_path_length]:
-				
-				new_vector = np.array([0.0, 0.0])
-				broke = False
-				for k in range(1, len(path)): 
-					if not vh.is_missing(measured[path[k - 1]][path[k]]):
-						new_vector += measured[path[k - 1]][path[k]]
-					else:
-						broke = True 
-						break
-
-				if not broke:
-					dv += new_vector
-					ndc += 1
-				
-			if ndc >= self.params.max_infer_components:
-				break 
-		
-		if ndc < 2:
-			return None
-		if generation_mode:
-			print('Inferred in generation mode!!!!!', dv/ndc)
-		return dv / ndc, max_dpl
 
 	def is_inferable(self, i1, i2, vectors):
 		t = 0

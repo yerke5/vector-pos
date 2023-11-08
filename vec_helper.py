@@ -79,7 +79,6 @@ def paths2dict(temp):
 	return paths
 
 def paths2len_dict(paths):
-	#print("Paths:", paths)
 	path_lens = {}
 	min_len = float('inf')
 	max_len = -1
@@ -107,7 +106,6 @@ def get_magnitude(vector):
 	return np.sqrt(np.sum(vector**2))
 
 def generate_paths(num_points, min_degree=1, max_degree=1):
-	#print("Num points:", num_points, "min:", min_degree, "max:", max_degree)
 	max_degree = min(max_degree + 1, num_points - 2)
 	min_degree = max(min_degree, 1)
 		
@@ -119,7 +117,6 @@ def generate_paths(num_points, min_degree=1, max_degree=1):
 		start, end = pair
 
 		for length in range(min_degree, max_degree):
-			#print("Exploring length", length)
 			middle_perms = list(permutations(full_middle_path, length))
 			for middle_perm in middle_perms:
 				paths.append((start, *middle_perm, end))
@@ -215,11 +212,9 @@ def generate_paths_of_length(num_points, length):
 def path_to_pairs(path):
 	if path[0] == path[-1]:
 		raise Exception("Wrong path")
-	#print(path)
 	pairs = []
 	for i in range(1, len(path)):
 		pairs.append((path[i - 1], path[i]))
-	#print(pairs)
 	return pairs
 
 def scatter_locations(space_size, coords, vectors, title):
@@ -282,7 +277,9 @@ def coords2vectors(coords):
 def vecs2coords(vectors, space_size, pivot=0):
 	# pivot at node 0
 	coords = np.zeros((len(vectors), 2))
-	for i in range(1, len(vectors)):
+	for i in range(len(vectors)):
+		if i == pivot:
+			continue 
 		if not is_missing(vectors[pivot][i]):
 			coords[i] = vectors[pivot][i]
 		else:
@@ -326,4 +323,16 @@ def get_origin_vectors(vectors, anchor_coords):
 	for i in range(len(origins) - len(anchor_coords)):
 		origins[i] /= nums[i]
 	return origins
-				
+
+def cartesian2polar(vectors):
+	polar = get_empty_vec_matrix(len(vectors))
+	for i in range(len(vectors)):
+		for j in range(len(vectors)):
+			if i != j and not is_missing(vectors[i][j]):
+				node = vectors[i][j]
+				r = math.sqrt(node[0]**2 + node[1]**2)
+				theta = math.acos(node[0] / r)
+				if node[1] < 0:
+					theta *= -1
+				polar[i][j] = np.array([r, theta])
+	return polar

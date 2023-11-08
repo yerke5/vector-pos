@@ -23,12 +23,14 @@ import matplotlib.patches as mpatches
 from mycolorpy import colorlist as mcp
 import consistency_checker as vc 
 
+POS_ERROR_LIMITS = [0, 1.2]
 DETECTION_RATE_LIMITS = [0, 100]
 GRAPH_DIR = "../../diagrams/simulations/algs/graphs"
 
 def get_noise_params(default=True):
 	if default:
-		return 0, .2, 0, .2
+		return 0, .2, 0, .2, None, None, None, None
+	
 	all_relative_angles = [3.33, 0, -5.71, 0, -4.24, 0, -0.51, 0, -1.33, 0, 1.6, 0, -0.01, 0, 1.31, 0, -1, 0, 0.11, 0, -0.1, 0, -1.39, 0, 2.75, 0, -1.5, 0, 1.14, 0, -1.31, 0, 2.54, 0, -0.45, 0, -23.87, -24.83, -24.79, -24.83, 3.21, 0, 0.33, 0, 26.12, 30.27, 27.67, 30.27, -8.67, -10.94, 78.72, 79.06, -1.54, 0, -0.41, 0, 0.64, 0, 0.91, 0, 8.3, 0, 1.09, 0, 1.4, 0, 0.74, 0, -2.43, 0, -0.82, 0, 1.1, 0, 0.79, 0, -0.17, 0, 0, 0, 0.25, 0, -0.7, 0, 2.57, 0, 1.12, 0, 0.96, 0, -1.5, 0]
 	all_distances = [9.47, 9.49, 11.29, 11.12, 22.23, 22.21, 10.81, 10.55, 9.37, 9.27, 9.38, 9.27, 12.71, 12.64, 12.7, 12.64, 15.1, 15.11, 13.3, 13.28, 11.2, 11.18, 15.1, 15.16, 20.24, 20.21, 20.24, 20.21, 23, 23.02, 23.01, 23.02, 43.23, 43.67, 43.21, 43.67, 44.68, 44.42, 44.68, 44.42, 35.67637162, 35.7, 35.7040232, 35.7, 9.06, 8.99, 9.1, 8.99, 40.3, 40.97, 40.48, 40.97, 24.34, 23.58, 24.33, 23.58, 43.47, 43.51, 43.47, 43.51, 37.33, 38.01, 37.33, 38.01, 11.84, 11.87, 11.84, 11.87, 13.4, 13.46, 13.4, 13.46, 36.49, 36.08, 36.49, 36.08, 17.66, 17.75, 17.65, 17.75, 33.59, 33.5, 33.57, 33.5, 23.57, 23.4, 23.58, 23.4, 28.61, 28.5, 28.62, 28.5]
 	ra_diffs = np.diff(all_relative_angles)
@@ -37,7 +39,20 @@ def get_noise_params(default=True):
 	ra_noise_std = (ra_diffs[::2] / 50).std()
 	dist_noise_mean = np.sqrt(((dist_diffs[::2] / all_distances[1::2])**2).mean())
 	dist_noise_std = (dist_diffs[::2] / all_distances[1::2]).std()
-	return ra_noise_mean, ra_noise_std, dist_noise_mean, dist_noise_std
+	low_ra_noise_mean = None
+	low_ra_noise_std = None
+	low_dist_noise_mean = None
+	low_dist_noise_std = None
+
+	ra_noise_mean = 0.085725
+	ra_noise_std = 0.01988939056740697
+	dist_noise_mean = 0.020481468875000002
+	dist_noise_std = 0.009046682192463212
+	low_ra_noise_mean = 0.019316666666666666
+	low_ra_noise_std = 0.012071401333678297
+	low_dist_noise_mean = 0.004282976694444444
+	low_dist_noise_std = 0.00318725572998929
+	return ra_noise_mean, ra_noise_std, dist_noise_mean, dist_noise_std, low_dist_noise_mean, low_dist_noise_std, low_ra_noise_mean, low_ra_noise_std
 
 def dict2df(d):
 	cmp = None
@@ -60,13 +75,15 @@ def dict2df(d):
 				dfs[f"Max K = {max_gen_degree}"][-1][-1] = num_nodes
 
 				for j, k in enumerate(d[max_gen_degree][num_nodes]):
+					# print(it, k)
+					# print(d[max_gen_degree][num_nodes][k], len(d[max_gen_degree][num_nodes][k]))
 					dfs[f"Max K = {max_gen_degree}"][-1][j] = d[max_gen_degree][num_nodes][k][it] # f"Max K = {max_gen_degree}"
 	
 	
 		dfs[f"Max K = {max_gen_degree}"] = pd.DataFrame(dfs[f"Max K = {max_gen_degree}"], columns=[f"K = {i}" for i in range(max_gen_degree + 1)] + ["N"])#.sort_values(by=["Max K", "K", "N"])
 	
-	return dfs
-
+	return dfs 
+	
 def box_plot(path_lens):
 	dfs = dict2df(path_lens)
 	for cat, df in dfs.items():
@@ -78,6 +95,7 @@ def box_plot(path_lens):
 			'capprops':{'color':'black'}
 		}
 		sns.boxplot(x="K", hue="N", y="% of generated vectors", data=df_long, linewidth=0.5, palette="cool", **PROPS)
+		#plt.title(f"Distribution of Generated Vectors for {cat}")
 		plt.ylim(0, 100)
 		plt.title("")
 		plt.tight_layout()
@@ -105,255 +123,6 @@ def bar_plot(data, x_labels, title, xa_label, ya_label, get_axis=False, separate
 		plt.show()
 	else:
 		return ax
-
-def fixed_path_lengths(iters, num_nodess, path_lens, params): 
-	space_size = params["space_size"]
-	angle_noise = params["angle_noise"]
-	radius_noise = params["radius_noise"]
-	max_angle = params["max_angle"]
-	max_range = params["max_range"]
-	noise_ratio = params["noise_ratio"]
-	consider_orientation = params["consider_orientation"]
-	random_orientations = params["random_orientations"] 
-	num_anchors = params["num_anchors"]
-	sequential = params["sequential"] 
-	noise_trim = params["noise_trim"]
-
-	rates = {}
-	pos_errors = {}
-
-	for n, num_nodes in enumerate(num_nodess):
-		print("Number of nodes:", num_nodes)
-		
-		for it in range(iters):
-			print(f"Iteration {it}")
-			
-			true_nodes = vh.generate_random_nodes(num_nodes, space_size, num_anchors=num_anchors)
-			true_vectors = vh.coords2vectors(true_nodes)
-			
-			# filter out vectors based on the ground truth
-			orientations = vh.get_orientations(true_nodes, space_size, random=random_orientations) if consider_orientation else None 
-			filtered = vm.drop_unseen_vectors(true_vectors, orientations, max_angle=max_angle, max_range=max_range, verbose=False)
-	
-			# inject noise into filtered vectors
-			measured = vm.inject_noise(filtered, noise_ratio, space_size, true_nodes, angle_noise, radius_noise, num_anchors=num_anchors)
-			
-			if not f"Measured vectors" in pos_errors:
-				pos_errors[f"Measured vectors"] = [0] * len(num_nodess)
-			
-			pos_errors[f"Measured vectors"][n] += vh.calculate_error(true_vectors, measured) / iters
-			
-			if not f"Measured vectors" in rates:
-				rates[f"Measured vectors"] = [0] * len(num_nodess)
-			
-			rates[f"Measured vectors"][n] += (1 - len(vh.get_missing(filtered)) / vh.vector_count(num_nodes, num_anchors)) / iters * 100
-
-			for path_len in path_lens:
-				if path_len >= num_nodes - 1:
-					continue
-				params = Params(
-					num_nodes,
-					space_size,
-					num_anchors=num_anchors,
-					max_infer_components=num_nodes-1, 
-					max_gen_components=num_nodes-1, 
-					min_gen_degree=path_len-2,
-					max_gen_degree=path_len-2,
-					min_consistency_degree=1,
-					max_consistency_degree=2,
-					noise_trim=False,
-					max_range=max_range,
-					max_angle=max_angle,
-					enforce_inference=False
-				)
-				vecgen = vg.VectorGenerator(params=params, verbose=False, sequential=sequential)
-
-				generated = vecgen.get_generated_vectors(measured) 
-				
-				if not f"Generated vectors (K = {path_len - 2})" in pos_errors:
-					pos_errors[f"Generated vectors (K = {path_len - 2})"] = [0] * len(num_nodess)
-
-				pos_errors[f"Generated vectors (K = {path_len - 2})"][n] += vh.calculate_error(true_vectors, generated) / iters
-				
-				if not f"Generated vectors (K = {path_len - 2})" in rates:
-					rates[f"Generated vectors (K = {path_len - 2})"] = [0] * len(num_nodess)
-				
-				rates[f"Generated vectors (K = {path_len - 2})"][n] += (1 - len(vh.get_missing(generated)) / vh.vector_count(num_nodes, num_anchors)) / iters * 100
-	
-	bar_plot(pos_errors, num_nodess, "Fixed K vs Positioning Error", "Number of nodes", "Positioning error (m)", separate_legend=True)
-	bar_plot(rates, num_nodess, "Fixed K vs Detection Rate", "Number of nodes", "Detection rate (%)", separate_legend=True, ylimits=DETECTION_RATE_LIMITS)
-
-def cumulative_path_lengths(iters, num_nodess, max_gen_degrees, params): 
-	space_size = params["space_size"]
-	angle_noise = params["angle_noise"]
-	radius_noise = params["radius_noise"]
-	max_angle = params["max_angle"]
-	max_range = params["max_range"]
-	noise_ratio = params["noise_ratio"]
-	consider_orientation = params["consider_orientation"]
-	random_orientations = params["random_orientations"] 
-	num_anchors = params["num_anchors"]
-	sequential = params["sequential"] 
-	noise_trim = params["noise_trim"]
-	
-	measured_rates = []
-	inferred_rates = []
-	measured_errors = []
-	inferred_errors = []
-
-	path_lens = collections.defaultdict(dict)
-	rates = {}
-	pos_errors = {}
-
-	for num_nodes in num_nodess:
-		for max_gen_degree in max_gen_degrees: 
-			path_lens[max_gen_degree][num_nodes] = {}
-			for k in range(0, max_gen_degree + 1):
-				path_lens[max_gen_degree][num_nodes][k + 2] = [0] * iters
-			
-	for n, num_nodes in enumerate(num_nodess):
-		print("Number of nodes:", num_nodes)
-		
-		for it in range(iters):
-			print(f"Iteration {it}")
-			measured_rate = measured_error = 0
-			inferred_rate = inferred_error = 0
-
-			true_nodes = vh.generate_random_nodes(num_nodes, space_size, num_anchors=num_anchors)
-			true_vectors = vh.coords2vectors(true_nodes)
-			
-			# filter out vectors based on the ground truth
-			orientations = vh.get_orientations(true_nodes, space_size, random=random_orientations) if consider_orientation else None 
-			filtered = vm.drop_unseen_vectors(true_vectors, orientations, max_angle=max_angle, max_range=max_range, verbose=False)
-			
-			# inject noise into filtered vectors
-			measured = vm.inject_noise(filtered, noise_ratio, space_size, true_nodes, angle_noise, radius_noise, num_anchors=num_anchors)
-			
-			if not f"Measured vectors" in pos_errors:
-				pos_errors[f"Measured vectors"] = [0] * len(num_nodess)
-			
-			pos_errors[f"Measured vectors"][n] += vh.calculate_error(true_vectors, measured) / iters
-			
-			if not f"Measured vectors" in rates:
-				rates[f"Measured vectors"] = [0] * len(num_nodess)
-			
-			rates[f"Measured vectors"][n] += (1 - len(vh.get_missing(filtered)) / vh.vector_count(num_nodes, num_anchors)) / iters * 100
-
-			for max_gen_degree in max_gen_degrees:
-				params = Params(
-					num_nodes,
-					space_size,
-					num_anchors=num_anchors,
-					max_infer_components=1, 
-					max_gen_components=1, 
-					min_gen_degree=1,
-					max_gen_degree=max_gen_degree,
-					min_consistency_degree=1,
-					max_consistency_degree=2,
-					noise_trim=False,
-					max_range=max_range,
-					max_angle=max_angle,
-					enforce_inference=False
-				)
-				vecgen = vg.VectorGenerator(params=params, verbose=False, sequential=sequential)
-
-				inferred, inference_path_lengths = vecgen.infer_vectors(measured, generation_mode=True) 
-				
-				for pl in inference_path_lengths:
-					path_lens[max_gen_degree][num_nodes][pl][it] = inference_path_lengths[pl] * 100 / (num_nodes * (num_nodes - 1))
-
-				if not f"Generated vectors (Max K = {max_gen_degree})" in pos_errors:
-					pos_errors[f"Generated vectors (Max K = {max_gen_degree})"] = [0] * len(num_nodess)
-
-				pos_errors[f"Generated vectors (Max K = {max_gen_degree})"][n] += vh.calculate_error(true_vectors, inferred) / iters
-				
-				if not f"Generated vectors (Max K = {max_gen_degree})" in rates:
-					rates[f"Generated vectors (Max K = {max_gen_degree})"] = [0] * len(num_nodess)
-				
-				rates[f"Generated vectors (Max K = {max_gen_degree})"][n] += (1 - len(vh.get_missing(inferred)) / vh.vector_count(num_nodes, num_anchors)) / iters * 100
-
-			measured_rates.append(measured_rate * 100)
-			inferred_rates.append(inferred_rate * 100)
-			measured_errors.append(measured_error)
-			inferred_errors.append(inferred_error)
-
-	plt.tight_layout()
-	box_plot(path_lens)
-	bar_plot(pos_errors, num_nodess, "Max K vs Positioning Error", "Number of nodes", "Positioning error (m)", separate_legend=True)
-	bar_plot(rates, num_nodess, "Max K vs Detection Rate", "Number of nodes", "Detection rate (%)", separate_legend=True, ylimits=DETECTION_RATE_LIMITS)
-
-def num_gen_components(iters, num_nodess, Ps, params, k_as_ratios=True):
-	space_size = params["space_size"]
-	angle_noise = params["angle_noise"]
-	radius_noise = params["radius_noise"]
-	max_angle = params["max_angle"]
-	max_range = params["max_range"]
-	noise_ratio = params["noise_ratio"]
-	consider_orientation = params["consider_orientation"]
-	random_orientations = params["random_orientations"] 
-	num_anchors = params["num_anchors"]
-	sequential = params["sequential"] 
-	noise_trim = params["noise_trim"]
-	ges = {"Measured vectors": [0] * len(num_nodess)}
-
-	for n, num_nodes in enumerate(num_nodess):
-		print("Number of nodes:", num_nodes)
-		
-		measured_error = 0
-		gen_errors = np.zeros(len(Ps),)
-		
-		for it in range(iters):
-			print("Iteration", it + 1)
-			true_nodes = vh.generate_random_nodes(num_nodes, space_size, num_anchors=num_anchors)
-			true_vectors = vh.coords2vectors(true_nodes)
-
-			# filter out vectors based on the ground truth
-			orientations = vh.get_orientations(true_nodes, space_size, random=random_orientations) if consider_orientation else None 
-			filtered = vm.drop_unseen_vectors(true_vectors, orientations, max_angle=max_angle, max_range=max_range, verbose=False)
-			#fr = (1 - len(vh.get_missing(filtered)) / vh.vector_count(num_nodes, num_anchors)) / iters
-			
-			# inject noise into filtered vectors
-			measured = vm.inject_noise(filtered, noise_ratio, space_size, true_nodes, angle_noise, radius_noise, num_anchors=num_anchors)
-			me = vh.calculate_error(true_vectors, measured)
-
-			for j, k in enumerate(Ps):
-				print("Number of generation components:", k)
-				if k == -1:
-					if f"Max P" not in ges:
-						ges["Max P"] = [0] * len(num_nodess)
-				elif k > num_nodes - 1:
-					continue
-				elif f"P = {k}" not in ges:
-					ges[f"P = {k if not k_as_ratios else k * 100}"] = [0] * len(num_nodess)
-				
-
-				params = Params(
-					num_nodes,
-					space_size,
-					max_infer_components=(k if not k_as_ratios else max(1, int(k * (num_nodes - 1)))) if k != -1 else float("inf"), 
-					max_gen_components=(k if not k_as_ratios else max(1, int(k * (num_nodes - 1)))) if k != -1 else float("inf"), 
-					min_gen_degree=1, 
-					max_gen_degree=1, 
-					min_consistency_degree=1, 
-					max_consistency_degree=1,
-					noise_trim=noise_trim,
-					max_range=max_range,
-					max_angle=max_angle,
-					enforce_inference=False
-				)
-				vecgen = vg.VectorGenerator(params=params, verbose=False, sequential=sequential)
-
-				generated = vecgen.get_generated_vectors(measured)
-				gen_errors[j] += vh.calculate_error(true_vectors, generated) / iters
-		
-		measured_error += me / iters	
-		ges["Measured vectors"][n] = measured_error
-		for j, k in enumerate(Ps):
-			if k > num_nodes - 1:
-				continue
-			ges[f"P = {k if not k_as_ratios else k * 100}" if k != -1 else "Max P"][n] = gen_errors[j]
-		
-	bar_plot(ges, num_nodess, f"P vs Positioning Error", "Number of nodes", "Positioning error (m)", separate_legend=True, cols=["Measured vectors"] + ["Max P"] + [f"P = {k}" for k in [1, 2, 5, 10, 20]])
 
 def algs_barplot(d, title, ylabel):
 	df = pd.DataFrame(d)
@@ -414,6 +183,193 @@ def algs_barplot(d, title, ylabel):
 	#plt.legend(loc="upper left")
 	plt.show()
 
+# fixed P and different K
+def cumulative_path_lengths(iters, num_nodess, max_gen_degrees, params): 
+	space_size = params["space_size"]
+	angle_noise = params["angle_noise"]
+	radius_noise = params["radius_noise"]
+	max_angle = params["max_angle"]
+	max_range = params["max_range"]
+	noise_ratio = params["noise_ratio"]
+	consider_orientation = params["consider_orientation"]
+	random_orientations = params["random_orientations"] 
+	num_anchors = params["num_anchors"]
+	sequential = params["sequential"] 
+	noise_trim = params["noise_trim"]
+	
+	measured_rates = []
+	inferred_rates = []
+	measured_errors = []
+	inferred_errors = []
+
+	path_lens = collections.defaultdict(dict)
+	rates = {}
+	pos_errors = {}
+
+	for num_nodes in num_nodess:
+		for max_gen_degree in max_gen_degrees: 
+			path_lens[max_gen_degree][num_nodes] = {}
+			for k in range(0, max_gen_degree + 1):
+				path_lens[max_gen_degree][num_nodes][k + 2] = [0] * iters
+			
+	for n, num_nodes in enumerate(num_nodess):
+		print("Number of nodes:", num_nodes)
+		
+		for it in range(iters):
+			print(f"Iteration {it}")
+			# measured_rate = measured_error = 0
+			# inferred_rate = inferred_error = 0
+
+			dpl = collections.defaultdict(list)
+			true_nodes = vh.generate_random_nodes(num_nodes, space_size, num_anchors=num_anchors)
+			anchor_nodes = true_nodes[-num_anchors:]
+			true_vectors = vh.coords2vectors(true_nodes)
+			
+			# filter out vectors based on the ground truth
+			orientations = vh.get_orientations(true_nodes, space_size, random=random_orientations) if consider_orientation else None 
+			filtered = vm.drop_unseen_vectors(true_vectors, orientations, max_angle=max_angle, max_range=max_range, verbose=False)
+			#print("Detection rate after filtering unreachable nodes:", measured_rate)
+
+			# inject noise into filtered vectors
+			measured = vm.inject_noise(filtered, noise_ratio, space_size, true_nodes, angle_noise, radius_noise, num_anchors=num_anchors)
+			
+			if not f"Measured vectors" in pos_errors:
+				pos_errors[f"Measured vectors"] = [0] * len(num_nodess)
+			
+			pos_errors[f"Measured vectors"][n] += vh.calculate_error(true_vectors, measured) / iters
+			print("Measured error:", pos_errors[f"Measured vectors"][n])
+			
+			if not f"Measured vectors" in rates:
+				rates[f"Measured vectors"] = [0] * len(num_nodess)
+			
+			rates[f"Measured vectors"][n] += (1 - len(vh.get_missing(filtered)) / vh.vector_count(num_nodes, num_anchors)) / iters * 100
+
+			for max_gen_degree in max_gen_degrees:
+				params = Params(
+					num_nodes,
+					space_size,
+					num_anchors=num_anchors,
+					max_infer_components=1, 
+					max_gen_components=1, 
+					min_gen_degree=1,
+					max_gen_degree=max_gen_degree,
+					min_consistency_degree=1,
+					max_consistency_degree=2,
+					noise_trim=False,
+					max_range=max_range,
+					max_angle=max_angle,
+					enforce_inference=False
+				)
+				#print("Generation paths:", params.generation_paths)
+				vecgen = vg.VectorGenerator(params=params, verbose=False, sequential=sequential)
+
+				inferred, inference_path_lengths = vecgen.infer_vectors(measured, generation_mode=True) #COME BAACK!!!!! used to be infer_vectors
+				
+				#print(inference_path_lengths)
+				
+				for pl in inference_path_lengths:
+					if pl == 4:
+						print("K = 2!!!!", inference_path_lengths[pl], "out of", (num_nodes * (num_nodes - 1)))
+					#dpl[pl].append(inference_path_lengths[pl] * 100 / (num_nodes * (num_nodes - 1))) # record the ratio of vectors at this K 
+					path_lens[max_gen_degree][num_nodes][pl][it] = inference_path_lengths[pl] * 100 / (num_nodes * (num_nodes - 1))
+
+				if not f"Generated vectors (Max K = {max_gen_degree})" in pos_errors:
+					pos_errors[f"Generated vectors (Max K = {max_gen_degree})"] = [0] * len(num_nodess)
+
+				pos_errors[f"Generated vectors (Max K = {max_gen_degree})"][n] += vh.calculate_error(true_vectors, inferred) / iters
+				
+				if not f"Generated vectors (Max K = {max_gen_degree})" in rates:
+					rates[f"Generated vectors (Max K = {max_gen_degree})"] = [0] * len(num_nodess)
+				
+				rates[f"Generated vectors (Max K = {max_gen_degree})"][n] += (1 - len(vh.get_missing(inferred)) / vh.vector_count(num_nodes, num_anchors)) / iters * 100
+
+	plt.tight_layout()
+	box_plot(path_lens)
+	bar_plot(pos_errors, num_nodess, "Max K vs Positioning Error", "Number of nodes", "Positioning error (m)", separate_legend=True)#, ylimits=POS_ERROR_LIMITS)
+	bar_plot(rates, num_nodess, "Max K vs Detection Rate", "Number of nodes", "Detection rate (%)", separate_legend=True, ylimits=DETECTION_RATE_LIMITS)
+
+# different P
+def num_gen_components(iters, num_nodess, Ps, params, k_as_ratios=True):
+	space_size = params["space_size"]
+	angle_noise = params["angle_noise"]
+	radius_noise = params["radius_noise"]
+	max_angle = params["max_angle"]
+	max_range = params["max_range"]
+	noise_ratio = params["noise_ratio"]
+	consider_orientation = params["consider_orientation"]
+	random_orientations = params["random_orientations"] 
+	num_anchors = params["num_anchors"]
+	sequential = params["sequential"] 
+	noise_trim = params["noise_trim"]
+	ges = {"Measured vectors": [0] * len(num_nodess)}
+
+	for n, num_nodes in enumerate(num_nodess):
+		print("Number of nodes:", num_nodes)
+		
+		# measured_rate = 0
+		# gen_rates = np.zeros(len(Ps),)
+		measured_error = 0
+		gen_errors = np.zeros(len(Ps),)
+		
+		for it in range(iters):
+			print("Iteration", it + 1)
+			true_nodes = vh.generate_random_nodes(num_nodes, space_size, num_anchors=num_anchors)
+			true_vectors = vh.coords2vectors(true_nodes)
+
+			# filter out vectors based on the ground truth
+			orientations = vh.get_orientations(true_nodes, space_size, random=random_orientations) if consider_orientation else None 
+			filtered = vm.drop_unseen_vectors(true_vectors, orientations, max_angle=max_angle, max_range=max_range, verbose=False)
+			#fr = (1 - len(vh.get_missing(filtered)) / vh.vector_count(num_nodes, num_anchors)) / iters
+			
+			# inject noise into filtered vectors
+			measured = vm.inject_noise(filtered, noise_ratio, space_size, true_nodes, angle_noise, radius_noise, num_anchors=num_anchors)
+			me = vh.calculate_error(true_vectors, measured)
+
+			for j, k in enumerate(Ps):
+				print("Number of generation components:", k)
+				if k == -1:
+					if f"Max P" not in ges:
+						ges["Max P"] = [0] * len(num_nodess)
+				elif k > num_nodes - 1:
+					continue
+				elif f"P = {k}" not in ges:
+					ges[f"P = {k if not k_as_ratios else k * 100}"] = [0] * len(num_nodess)
+				
+
+				params = Params(
+					num_nodes,
+					space_size,
+					max_infer_components=(k if not k_as_ratios else max(1, int(k * (num_nodes - 1)))) if k != -1 else float("inf"), 
+					max_gen_components=(k if not k_as_ratios else max(1, int(k * (num_nodes - 1)))) if k != -1 else float("inf"), 
+					min_gen_degree=1, 
+					max_gen_degree=1, 
+					min_consistency_degree=1, 
+					max_consistency_degree=1,
+					noise_trim=noise_trim,
+					max_range=max_range,
+					max_angle=max_angle,
+					enforce_inference=False
+				)
+				vecgen = vg.VectorGenerator(params=params, verbose=False, sequential=sequential)
+
+				generated = vecgen.get_generated_vectors(measured)
+				#gen_rates[j] += (1 - len(vh.get_missing(generated)) / vh.vector_count(num_nodes, num_anchors)) * 100 / iters
+				gen_errors[j] += vh.calculate_error(true_vectors, generated) / iters
+
+				#pos_errors[f"P = {k}"].append(gen_errors.copy()
+				
+			#measured_rate += fr * 100 / iters
+			measured_error += me / iters
+			
+		ges["Measured vectors"][n] = measured_error
+		for j, k in enumerate(Ps):
+			if k > num_nodes - 1:
+				continue
+			ges[f"P = {k if not k_as_ratios else k * 100}" if k != -1 else "Max P"][n] = gen_errors[j]
+		
+	bar_plot(ges, num_nodess, f"P vs Positioning Error", "Number of nodes", "Positioning error (m)", separate_legend=True, cols=["Measured vectors"] + ["Max P"] + [f"P = {k}" for k in [1, 2, 5, 10, 20]])#, ylimits=POS_ERROR_LIMITS)
+
+# positioning algorithms (HA + GA)
 def cmp_algs(iters, num_nodess, noise_ratios, params_, algs, draw_vectors=False, savefigs=False):
 	space_size = params_["space_size"]
 	angle_noise = params_["angle_noise"]
@@ -446,6 +402,7 @@ def cmp_algs(iters, num_nodess, noise_ratios, params_, algs, draw_vectors=False,
 	mean_angle_noise = 0
 	ha_delta = params_["ha_delta"]
 	supergene_delta = params_["supergene_delta"]
+	low_dist_noise_mean, low_dist_noise_std, low_ra_noise_mean, low_ra_noise_std = params_["low_dist_noise_mean"], params_["low_dist_noise_std"], params_["low_ra_noise_mean"], params_["low_ra_noise_std"]
 	
 	if "mean_radius_noise" in params_:
 		mean_radius_noise = params_["mean_radius_noise"]
@@ -499,7 +456,7 @@ def cmp_algs(iters, num_nodess, noise_ratios, params_, algs, draw_vectors=False,
 					filtered = true_vectors
 				
 				# inject noise into filtered vectors
-				measured = vm.inject_noise(filtered, noise_ratio, space_size, true_nodes, angle_noise, radius_noise, num_anchors=num_anchors, mean_angle_noise=mean_angle_noise, mean_radius_noise=mean_radius_noise)
+				measured = vm.inject_noise(filtered, noise_ratio, space_size, true_nodes, angle_noise, radius_noise, num_anchors=num_anchors, mean_angle_noise=mean_angle_noise, mean_radius_noise=mean_radius_noise, mean_angle_noise_low=low_ra_noise_mean, mean_radius_noise_low=low_dist_noise_mean, angle_noise_low=low_ra_noise_std, radius_noise_low=low_dist_noise_std)
 				curr_measured_error = vh.calculate_error(true_vectors, measured)
 				curr_measured_rate = (1 - len(vh.get_missing(measured)) / vh.vector_count(num_nodes, num_anchors)) * 100
 				
@@ -577,12 +534,12 @@ def cmp_algs(iters, num_nodess, noise_ratios, params_, algs, draw_vectors=False,
 	# plt.xlabel("")
 	# plt.show()
 
-ra_noise_mean, ra_noise_std, dist_noise_mean, dist_noise_std = get_noise_params(default=False)
+ra_noise_mean, ra_noise_std, dist_noise_mean, dist_noise_std, low_dist_noise_mean, low_dist_noise_std, low_ra_noise_mean, low_ra_noise_std = get_noise_params(default=True)
 
 params = {
 	"space_size": 30,
-	"angle_noise": ra_noise_std,
-	"radius_noise": dist_noise_std,
+	"angle_noise": ra_noise_std,#.2,
+	"radius_noise": dist_noise_std,#.2,
 	"max_angle": 50,
 	"max_range": 40,
 	"noise_ratio": 1,
@@ -593,8 +550,8 @@ params = {
 	"noise_trim": False,
 	"min_gen_degree": 1,
 	"max_gen_degree": 1,
-	"min_consistency_degree": 2,
-	"max_consistency_degree": 3,
+	"min_consistency_degree": 1,
+	"max_consistency_degree": 2,
 	"DI_P": float("inf"),
 	"GEN_P": float("inf"),
 	"ga_iters": 20,
@@ -610,33 +567,30 @@ params = {
 	"try_negative_vectors": True,
 	"mean_angle_noise": ra_noise_mean,
 	"mean_dist_noise": dist_noise_mean,
-	"ha_delta": .4,
-	"supergene_delta": .4
+	"ha_delta": 1e-6,
+	"supergene_delta": 1e-6,
+	"low_dist_noise_mean": low_dist_noise_mean, 
+	"low_dist_noise_std": low_dist_noise_std,
+	"low_ra_noise_mean": low_ra_noise_mean,
+	"low_ra_noise_std": low_ra_noise_std
 }
 print("-" * 50)
 for param in params:
 	print(param, params[param])
 
 print("-" * 50)
-Ps = [1, 2, 5, 10, 20, -1]#[.1, .25, .5, .75, 1]
+Ps = [1, 2, 5, 10, 20, -1]
 iters = 10
 max_gen_degrees = [1, 2]
 path_lens = [3, 4, 5]
 noise_ratios = [.3, .5, .7, .9]
-algs = ["HA"]
+algs = ["HA", "GA"]
 matplotlib.rcParams.update({'font.size': 20})
 
-# uncomment one of the lines below to generate graphs in the paper
+# uncomment one of the lines below to run the simulations
+cumulative_path_lengths(iters=iters, num_nodess=[5, 10, 30, 50], max_gen_degrees=max_gen_degrees, params=params)
 
-# cumulative K and fixed P
-#cumulative_path_lengths(iters=iters, num_nodess=[5, 10, 30, 50], max_gen_degrees=max_gen_degrees, params=params)
-
-# fixed K and maximum P
-#fixed_path_lengths(iters=iters, num_nodess=[10, 20, 30], path_lens=path_lens, params=params)
-
-# different P
 #num_gen_components(iters=iters, num_nodess=[5, 10, 30, 50], Ps=Ps, params=params, k_as_ratios=False)
 
-# comparing the heuristic and genetic algorithms
-cmp_algs(iters=5, num_nodess=[10, 20, 30], noise_ratios=noise_ratios, params_=params, algs=algs, savefigs=False)
+#cmp_algs(iters=3, num_nodess=[10, 20, 30], noise_ratios=noise_ratios, params_=params, algs=algs, savefigs=True)#, draw_vectors=True)
 
