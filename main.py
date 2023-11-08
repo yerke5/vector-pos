@@ -27,33 +27,9 @@ POS_ERROR_LIMITS = [0, 1.2]
 DETECTION_RATE_LIMITS = [0, 100]
 GRAPH_DIR = "../../diagrams/simulations/algs/graphs"
 
-def get_noise_params(default=True):
-	if default:
-		return 0, .2, 0, .2, None, None, None, None
+def get_noise_params():
+	return 0, .2, 0, .2, None, None, None, None
 	
-	all_relative_angles = [3.33, 0, -5.71, 0, -4.24, 0, -0.51, 0, -1.33, 0, 1.6, 0, -0.01, 0, 1.31, 0, -1, 0, 0.11, 0, -0.1, 0, -1.39, 0, 2.75, 0, -1.5, 0, 1.14, 0, -1.31, 0, 2.54, 0, -0.45, 0, -23.87, -24.83, -24.79, -24.83, 3.21, 0, 0.33, 0, 26.12, 30.27, 27.67, 30.27, -8.67, -10.94, 78.72, 79.06, -1.54, 0, -0.41, 0, 0.64, 0, 0.91, 0, 8.3, 0, 1.09, 0, 1.4, 0, 0.74, 0, -2.43, 0, -0.82, 0, 1.1, 0, 0.79, 0, -0.17, 0, 0, 0, 0.25, 0, -0.7, 0, 2.57, 0, 1.12, 0, 0.96, 0, -1.5, 0]
-	all_distances = [9.47, 9.49, 11.29, 11.12, 22.23, 22.21, 10.81, 10.55, 9.37, 9.27, 9.38, 9.27, 12.71, 12.64, 12.7, 12.64, 15.1, 15.11, 13.3, 13.28, 11.2, 11.18, 15.1, 15.16, 20.24, 20.21, 20.24, 20.21, 23, 23.02, 23.01, 23.02, 43.23, 43.67, 43.21, 43.67, 44.68, 44.42, 44.68, 44.42, 35.67637162, 35.7, 35.7040232, 35.7, 9.06, 8.99, 9.1, 8.99, 40.3, 40.97, 40.48, 40.97, 24.34, 23.58, 24.33, 23.58, 43.47, 43.51, 43.47, 43.51, 37.33, 38.01, 37.33, 38.01, 11.84, 11.87, 11.84, 11.87, 13.4, 13.46, 13.4, 13.46, 36.49, 36.08, 36.49, 36.08, 17.66, 17.75, 17.65, 17.75, 33.59, 33.5, 33.57, 33.5, 23.57, 23.4, 23.58, 23.4, 28.61, 28.5, 28.62, 28.5]
-	ra_diffs = np.diff(all_relative_angles)
-	dist_diffs = np.diff(all_distances)
-	ra_noise_mean = np.sqrt(((ra_diffs[::2] / 50)**2).mean())
-	ra_noise_std = (ra_diffs[::2] / 50).std()
-	dist_noise_mean = np.sqrt(((dist_diffs[::2] / all_distances[1::2])**2).mean())
-	dist_noise_std = (dist_diffs[::2] / all_distances[1::2]).std()
-	low_ra_noise_mean = None
-	low_ra_noise_std = None
-	low_dist_noise_mean = None
-	low_dist_noise_std = None
-
-	ra_noise_mean = 0.085725
-	ra_noise_std = 0.01988939056740697
-	dist_noise_mean = 0.020481468875000002
-	dist_noise_std = 0.009046682192463212
-	low_ra_noise_mean = 0.019316666666666666
-	low_ra_noise_std = 0.012071401333678297
-	low_dist_noise_mean = 0.004282976694444444
-	low_dist_noise_std = 0.00318725572998929
-	return ra_noise_mean, ra_noise_std, dist_noise_mean, dist_noise_std, low_dist_noise_mean, low_dist_noise_std, low_ra_noise_mean, low_ra_noise_std
-
 def dict2df(d):
 	cmp = None
 	colors = collections.defaultdict(list) 
