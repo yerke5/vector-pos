@@ -178,6 +178,50 @@ class ConsistencyChecker:
 
         return temp
 
+    def get_supergenes2(self, vectors, max_shapes):
+        shapes = dict()
+        supergenes = set()
+        k = 0
+        for pair in self.params.consistency_paths:
+            if vh.is_missing(vectors[pair[0]][pair[1]]):
+                continue 
+            for path in self.params.consistency_paths[pair]:
+                if len(path) < 3:
+                    continue
+                generated = np.array([0, 0])
+                negated = set()
+                broke = False
+                for i in range(1, len(path)):
+                    if not vh.is_missing(vectors[path[i - 1]][path[i]]):
+                        generated = generated + vectors[path[i - 1]][path[i]]
+                    elif not vh.is_missing(vectors[path[i]][path[i - 1]]):
+                        generated = generated - vectors[path[i]][path[i - 1]]
+                        negated.add((path[i - 1], path[i]))
+                    else:
+                        broke = True 
+                        break 
+                    if broke:
+                        continue 
+                
+                diff = np.sum((vectors[pair[0]][pair[1]] - generated)**2)
+                
+                if diff == 0:
+                    #print(path, "is consistent")
+                    supergenes.add(pair)
+                    for i in range(1, len(path)):
+                        if (path[i - 1], path[i]) in negated:
+                            supergenes.add((path[i], path[i - 1]))
+                            #print("---", (path[i], path[i-1]))
+                        else:
+                            supergenes.add((path[i - 1], path[i]))
+                            #print("---", (path[i - 1], path[i]))
+                    k += 1
+
+                if k >= max_shapes:
+                    break
+                
+        return supergenes
+    
     def get_supergenes(self, vectors, max_shapes):
         temp = np.zeros((len(vectors), len(vectors), 2))
         temp[:, :] = np.nan
@@ -373,6 +417,103 @@ class ConsistencyChecker:
                         shapes[curr_path, (a, z)] = diff 
                     else:
                         shapes[curr_path, (a, z)] = min(diff, shapes[path, (a, z)])
+
+    def build_consistent_vectors_working(self, vectors, max_num_consistency_shapes=float("inf")):
+        consistent_vectors = vh.get_empty_vec_matrix(len(vectors))
+        shapes = dict()
+        pairs = list(self.params.generation_paths.keys())
+        coverage = self.init_coverage_matrix(vectors)
+        dfs = True
+        if self.verbose:
+            print("Initial coverage:", self.get_num_covered_vectors(coverage))
+
+        covered = False   
+        for (start_vertex, end_vertex) in pairs:
+            if not vh.is_missing(vectors[start_vertex][end_vertex]) and not coverage[start_vertex][end_vertex]:
+                if self.verbose:
+                    vh.log(f"Performing dfs on M{start_vertex + 1}-{end_vertex + 1}")
+                self.consistency_dfs(start_vertex, end_vertex, vectors, consistent_vectors, coverage, shapes, 0, max_num_consistency_shapes=max_num_consistency_shapes)
+            
+            if self.all_vectors_covered(coverage):
+                #print("ALL VECTORS COVERED:", coverage)
+                covered = True 
+                break 
+            
+        nmv = 0
+        #print("Result before deduction:", vh.beautify_matrix(consistent_vectors))
+        if not covered:
+            vh.log("Deduction incomplete, so performing additional deduction")
+            # try to deduce missing vectors 
+            consistent_vectors, num_missing_vectors = self.vector_generator.get_inferrable_vectors(consistent_vectors, coverage=None) # used to be coverage=coverage
+            nmv = num_missing_vectors
+            #print("Num missing vectors:", num_missing_vectors)
+            
+            # only copy vectors from noisy vectors that couldn't be deduced
+            if num_missing_vectors > 0:
+                shapes = list(sorted(shapes.items(), key=lambda item: item[1]))
+                deduction_complete = False
+                for path, _ in shapes:
+                    for i in range(len(path)):
+                        if vh.is_missing(consistent_vectors[path[i - 1]][path[i]]):
+                            #print(f"buildConsistentVectors(): Getting {path[i-1]+1}-{path[i]+1} from consistent shapes")
+                            consistent_vectors[path[i - 1]][path[i]] = vectors[path[i - 1]][path[i]].copy()
+                            num_missing_vectors -= 1
+                            if num_missing_vectors == 0:
+                                deduction_complete = True 
+                                break 
+                    if deduction_complete:
+                        break 
+        
+        return consistent_vectors, nmv
+
+    def consistency_dfs_working(self, a, z, vectors, consistent_vectors, coverage, shapes, curr_num_shapes, max_num_consistency_shapes=float("inf")):
+        if (curr_num_shapes >= max_num_consistency_shapes) or self.all_vectors_covered(coverage):
+            return 
+
+        for path in self.params.consistency_paths[(a, z)]:
+            if len(path) < 3:
+                continue
+            if path not in shapes and vh.is_valid(path, vectors):
+                generated = np.array([0, 0])
+                
+                for i in range(1, len(path)):
+                    generated = generated + vectors[path[i - 1]][path[i]]
+                
+                diff = np.sqrt(np.sum((vectors[a][z] - generated)**2))
+
+                if diff <= 1e-6:
+                    #print("Found clean shape", path)
+                    # mark all consistent vectors as covered
+                    # copy them to the original vector matrix
+                    #print(f"Covering M{a+1}M{z+1}")
+                    coverage[a][z] = True 
+                    uncovered = set()
+                    for i in range(1, len(path)):
+                        if not coverage[path[i - 1]][path[i]]:
+                            uncovered.add((path[i - 1], path[i]))
+                            #print(f"Covering M{path[i-1]+1}M{path[i]+1} as part of consistent shape", path)
+                            coverage[path[i - 1]][path[i]] = True 
+                            
+                        if vh.is_missing(consistent_vectors[path[i-1]][path[i]]):#
+                            #print(f"Copying M{path[i - 1] + 1}-{path[i] + 1} to consistent vectors")
+                            if self.verbose:
+                                print(f"Copying M{path[i - 1] + 1}-{path[i] + 1} to consistent vectors")
+                            consistent_vectors[path[i - 1]][path[i]] = vectors[path[i - 1]][path[i]].copy()
+                    
+                    if len(uncovered) > 0:
+                        #print(f"INFERRING VECTORS AFTER CONSISTENCY CHECK ON M{a+1}M{z+1}")
+                        deduced, num_missing_vectors = self.vector_generator.get_inferrable_vectors(consistent_vectors, coverage=coverage)
+                        consistent_vectors[:, :, :] = copy.deepcopy(deduced)
+                        if len(vh.get_missing(deduced)) == 0:
+                            #print("Inferred ALL VECTORS!!!!")
+                            coverage[:, :] = True
+                            return 
+
+                    for (x, y) in uncovered:
+                        #print("Starting to explore", x, "-", y)
+                        self.consistency_dfs(x, y, vectors, consistent_vectors, coverage, shapes, curr_num_shapes + 1)
+                else:
+                    shapes[path] = diff
 
     def all_vectors_covered(self, covered):
         return np.all(covered) == True 

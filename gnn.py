@@ -27,7 +27,7 @@ def bar_plot(data, x_labels, title, xa_label, ya_label, get_axis=False, separate
 	df = pd.DataFrame(data=data, index=x_labels)
 	if cols:
 		df = df[cols]
-	#print(df)
+
 	
 	ax = df.plot.bar(rot=15, title=title, colormap="cool", edgecolor="white")
 	ax.set(xlabel=xa_label, ylabel=ya_label)
@@ -69,20 +69,9 @@ def generate_params(num_nodess):
 
     return vecgens
 
-def sparse2vecs(sparse, edge_index, num_nodes):
-    vectors = vh.get_empty_vec_matrix(num_nodes)
-    for k in range(edge_index.shape[1]):
-        i, j = edge_index[0][k], edge_index[1][k]
-        vectors[i][j] = sparse[k].copy()
-    return vectors
-
-def cmp_algs(space_size, noisy_coords, true_coords, predicted_coords, edge_attr, edge_index, average_features, input_generated=True, vecgens=None, draw=False, polar=False, debug=False):
+def cmp_algs(space_size, noisy_coords, true_coords, predicted_coords, edge_attr, edge_index, average_features, input_generated=True, vecgens=None, draw=False, polar=False):
     noisy_coords = noisy_coords.cpu().detach().numpy()
     edge_index = edge_index.cpu().detach().numpy()
-
-    if debug:
-        print("Coordinates different:", (np.abs(noisy_coords - true_coords.cpu().detach().numpy()) > .01).sum())
-        print("Coordinates diff 2:", np.abs(vh.coords2vectors(true_coords.cpu().detach().numpy()) - vh.coords2vectors(noisy_coords)).sum())
 
     if not average_features:
         edge_attr = np.mean(edge_attr.cpu().detach().numpy().reshape(len(edge_attr), len(edge_attr), -1, 2), axis=-2)
@@ -95,46 +84,21 @@ def cmp_algs(space_size, noisy_coords, true_coords, predicted_coords, edge_attr,
     # generated
     num_nodes = len(true_coords)
 
-    # conscheck = vc.ConsistencyChecker(
-    #     params,
-    #     vector_generator=vecgen,
-    #     verbose=False,
-    #     mirror_consistent_vectors=False,
-    #     include_baseline_vector=False,
-    #     try_negative_vectors=True,
-    #     delta = 1e-6,
-    #     supergene_delta = 1e-2
-    # )
-    #print("Generated vectors")
     if input_generated:
-        generated = sparse2vecs(edge_attr, edge_index, num_nodes)
+        generated = vh.sparse2vecs(edge_attr, edge_index, num_nodes)
         if polar:
             generated = vh.polar2cartesian(generated)
-        #print("Generated:", vh.beautify_matrix(generated))
+        
         if average_features:
             measured = vh.coords2vectors(noisy_coords)
         else:
             measured = vh.coords2vectors(np.mean(noisy_coords.reshape(noisy_coords.shape[0], -1, 2), axis=1))
-        #print("Measured:", vh.beautify_matrix(measured))
+
     else:
-        measured = sparse2vecs(edge_attr, edge_index, num_nodes)
+        measured = vh.sparse2vecs(edge_attr, edge_index, num_nodes)
         if polar:
             measured = vh.polar2cartesian(measured)
-        s = (np.abs((vh.polar2cartesian(measured) if polar else measured) - true_vectors) > .01).sum()
-        if debug and s > 0:
-            print("Errors 5:", s)
-            print("MEASURED:", vh.beautify_matrix((vh.polar2cartesian(measured) if polar else measured)))
-            print("ACTUAL:", vh.beautify_matrix(true_vectors))
         
-        s = (np.abs(measured - (vh.cartesian2polar(true_vectors) if polar else true_vectors)) > .01).sum()
-        if debug and s > 0:
-            print("Errors 6:", s)
-
-        s = (np.abs(measured - (vh.cartesian2polar(vh.coords2vectors(noisy_coords)) if polar else true_vectors)) > .01).sum()
-        if debug and s > 0:
-            print("Errors 7:", s)
-        #measured = vh.polar2cartesian(measured)
-
         if vecgens is None:
             params = Params(
                 num_nodes,
@@ -157,34 +121,6 @@ def cmp_algs(space_size, noisy_coords, true_coords, predicted_coords, edge_attr,
         st = time.time()
         generated = vecgen.get_generated_vectors(measured)
         generated_rt = time.time() - st
-
-    # GA
-    # genalg = ga.GA(
-    #     measured=measured,
-    #     max_di_components=float("inf"),
-    #     population_size=30,
-    #     vecgen=vecgen,
-    #     conscheck=conscheck,
-    #     elite_proportion=.1,
-    #     crossover_rate=.8,
-    #     mutation_rate=.1,
-    #     iters=15,
-    #     missing_vectors_weight=.2,
-    #     verbose=False,
-    #     init_consistent_shapes_ratio=.3,
-    #     min_di_components=2,
-    #     max_init_consistency_shapes=num_nodes//2,
-    #     max_supergene_shapes=num_nodes//2
-    # )
-
-    # ga_res, best_fitness = genalg.run(
-    #     true_vectors=true_vectors,
-    #     verbose=False
-    # )
-
-    # HA
-    #print("Heuristic algorithm")
-    #ha_res, nmv = conscheck.build_consistent_vectors(measured)
 
     errors = {
         "Measured vectors": vh.calculate_error(measured, true_vectors),
@@ -214,32 +150,6 @@ def train_val_dataset(dataset, val_split=0.25):
     datasets['val'] = Subset(dataset, val_idx)
     return datasets
 
-def vecs2coo(vecs):
-    idx = [[], []]
-    vals = []
-    feats = []
-    for i in range(len(vecs)):
-        for j in range(len(vecs)):
-            if i != j and not vh.is_missing(vecs[i][j]):
-                idx[0].append(i)
-                idx[1].append(j)
-                vals.append(1)
-                feats.append(vecs[i][j])
-    return torch.sparse_coo_tensor(idx, vals, (len(vecs), len(vecs))), np.array(feats)
-
-def vecs2sparse(vecs):
-    idx = [[], []]
-    vals = []
-    feats = []
-    for i in range(len(vecs)):
-        for j in range(len(vecs)):
-            if i != j and not vh.is_missing(vecs[i][j]):
-                idx[0].append(i)
-                idx[1].append(j)
-                vals.append(1)
-                feats.append(vecs[i][j].copy())
-    return np.array(idx), np.array(feats)
-
 def generate_dataset(
     train_size,
     num_nodess=None,
@@ -265,25 +175,6 @@ def generate_dataset(
     max_angle = 50
     dataset = []
     xs, ys, edge_indexes, edge_attrs = [], [], [], []
-
-    # params = Params(
-    #     50,
-    #     40,
-    #     num_anchors=0,
-    #     max_infer_components=49,
-    #     max_gen_components=49,
-    #     min_gen_degree=1,
-    #     max_gen_degree=1,
-    #     min_consistency_degree=1,
-    #     max_consistency_degree=2,
-    #     noise_trim=False,
-    #     max_range=40,
-    #     max_angle=50,
-    #     enforce_inference=False
-    # )
-    # vecgen = vg.VectorGenerator(params=params, verbose=False, sequential=False)
-
-    # generated = vecgen.get_generated_vectors(measured)
 
     if num_nodess is not None and generate_vectors:
         vecgens = generate_params(num_nodess)
@@ -328,9 +219,6 @@ def generate_dataset(
                 if polar:
                     measured = vh.cartesian2polar(measured)
 
-                s = (np.abs(measured - (vh.cartesian2polar(true_vectors) if polar else true_vectors)) > .01).sum()
-                if debug and s > 0:
-                    print("Errors 1:", s)
                 if num_nodess is not None and generate_vectors:
                     if polar:
                         measured = vh.polar2cartesian(measured)
@@ -344,23 +232,9 @@ def generate_dataset(
                 noisy_coords = np.concatenate(noisy_coordss, axis=-1)
                 if average_timestamps:
                     noisy_coords = vh.vecs2coords(vh.polar2cartesian(measured) if polar else measured, space_size) #np.mean(noisy_coords.reshape(noisy_coords.shape[0], -1, 2), axis=1)
-                    s = (np.abs(noisy_coords - true_coords) > .01).sum()
-                    if debug and s > 0:
-                        print("Errors 2:", s)
+                    
+            edge_index, edge_attr = vh.vecs2sparse(measured)
             
-            edge_index, edge_attr = vecs2sparse(measured)
-            s = (np.abs(sparse2vecs(edge_attr, edge_index, num_nodes) - (vh.cartesian2polar(true_vectors) if polar else true_vectors)) > .01).sum()
-            if debug and s > 0:
-                print("Errors 3:", s)
-
-            s = (np.abs((vh.polar2cartesian(sparse2vecs(edge_attr, edge_index, num_nodes)) if polar else sparse2vecs(edge_attr, edge_index, num_nodes)) - true_vectors) > .01).sum()
-            if debug and s > 0:
-                print("Errors 4:", s)
-
-            s = (np.abs((vh.polar2cartesian(sparse2vecs(edge_attr, edge_index, num_nodes)) if polar else sparse2vecs(edge_attr, edge_index, num_nodes)) - vh.coords2vectors(noisy_coords)) > .01).sum()
-            if debug and s > 0:
-                print("Errors 4.5:", s)
-
             if save_data_dir:
                 if not os.path.isdir(save_data_dir):
                     os.mkdir(save_data_dir)
@@ -370,20 +244,6 @@ def generate_dataset(
                 np.save(f'{save_data_dir}/edge-index-{i}.npy', edge_index)
                 np.save(f'{save_data_dir}/edge-attr-{i}.npy', edge_attr)
 
-            if i < 3:
-                print("Measured:", vh.beautify_matrix(measured[:10]))
-                print("Measured from coords:", vh.beautify_matrix(((vh.coords2vectors(noisy_coords)))[:10]))#vh.beautify_matrix((vh.cartesian2polar(vecgens[len(noisy_coords)].get_generated_vectors(vh.coords2vectors(noisy_coords)))[:10])))
-                print("Measured from sparse:", vh.beautify_matrix(sparse2vecs(edge_attr, edge_index, len(noisy_coords))[:10]))
-
-
-        if i < 3:
-            print("Edge attr:", edge_attr.shape)
-            print("Edge index:", edge_index.shape)
-            print("Noisy coords shape:", noisy_coords.shape)
-            print("Noisy coords:", noisy_coords)
-            print("Edge index:", edge_index[:, :10])
-            print("Edge features:", edge_attr[:10])
-            
         xs.append(copy.deepcopy(noisy_coords))
         ys.append(copy.deepcopy(true_coords))
         edge_indexes.append(copy.deepcopy(edge_index))
@@ -543,10 +403,7 @@ else:
     
     for epoch in range(num_epochs):
         for data in train_dataloader:  # Iterate over batches of data
-            #print("data.x shape:", data.x.shape, "data.edge_attr shape:", data.edge_attr.shape)
             optimizer.zero_grad()  # Zero the gradients
-            # print("data.x", data.x)
-            # print("data.x", data.x.shape, "data.edge_index", data.edge_index.shape, "data.edge_attr", data.edge_attr.shape)
             output = model(data)  # Forward pass
             loss = criterion(output, data.y)  # Compute the loss
             loss.backward()  # Backpropagation
@@ -574,7 +431,7 @@ model.eval()
 test_loss = 0.0
 k = 0
 example = True
-all_errors = {}#{"generated": [], "HA": [], "measured": [], "GNN": []}
+all_errors = {}
 all_rates = {}
 all_rts = {}
 
@@ -630,11 +487,8 @@ for key in all_errors:
             all_rts[key][n] = np.mean(all_rts[key][n])
 
 keys = list(all_errors.keys())
-# plt.bar(keys, [all_errors[key] for key in keys])
-# plt.show()
 
 bar_plot(all_errors, num_nodess, "", "Number of nodes", "Positioning error (m)", separate_legend=True)#, ylimits=POS_ERROR_LIMITS)
 bar_plot(all_rates, num_nodess, "", "Number of nodes", "Detection rate (%)", separate_legend=True)
-#bar_plot(all_rts, num_nodess, "", "Number of nodes", "Time (seconds)", separate_legend=True)
 
 print("Running times:", all_rts)

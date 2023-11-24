@@ -27,12 +27,81 @@ POS_ERROR_LIMITS = [0, 1.2]
 DETECTION_RATE_LIMITS = [0, 100]
 GRAPH_DIR = "../../diagrams/simulations/algs/graphs"
 
-def get_noise_params():
-	return 0, .2, 0, .2, None, None, None, None
+def get_noise_params(default=True):
+	if default:
+		return 0, .2, 0, .2, None, None, None, None
 	
+	all_relative_angles = [3.33, 0, -5.71, 0, -4.24, 0, -0.51, 0, -1.33, 0, 1.6, 0, -0.01, 0, 1.31, 0, -1, 0, 0.11, 0, -0.1, 0, -1.39, 0, 2.75, 0, -1.5, 0, 1.14, 0, -1.31, 0, 2.54, 0, -0.45, 0, -23.87, -24.83, -24.79, -24.83, 3.21, 0, 0.33, 0, 26.12, 30.27, 27.67, 30.27, -8.67, -10.94, 78.72, 79.06, -1.54, 0, -0.41, 0, 0.64, 0, 0.91, 0, 8.3, 0, 1.09, 0, 1.4, 0, 0.74, 0, -2.43, 0, -0.82, 0, 1.1, 0, 0.79, 0, -0.17, 0, 0, 0, 0.25, 0, -0.7, 0, 2.57, 0, 1.12, 0, 0.96, 0, -1.5, 0]
+	all_distances = [9.47, 9.49, 11.29, 11.12, 22.23, 22.21, 10.81, 10.55, 9.37, 9.27, 9.38, 9.27, 12.71, 12.64, 12.7, 12.64, 15.1, 15.11, 13.3, 13.28, 11.2, 11.18, 15.1, 15.16, 20.24, 20.21, 20.24, 20.21, 23, 23.02, 23.01, 23.02, 43.23, 43.67, 43.21, 43.67, 44.68, 44.42, 44.68, 44.42, 35.67637162, 35.7, 35.7040232, 35.7, 9.06, 8.99, 9.1, 8.99, 40.3, 40.97, 40.48, 40.97, 24.34, 23.58, 24.33, 23.58, 43.47, 43.51, 43.47, 43.51, 37.33, 38.01, 37.33, 38.01, 11.84, 11.87, 11.84, 11.87, 13.4, 13.46, 13.4, 13.46, 36.49, 36.08, 36.49, 36.08, 17.66, 17.75, 17.65, 17.75, 33.59, 33.5, 33.57, 33.5, 23.57, 23.4, 23.58, 23.4, 28.61, 28.5, 28.62, 28.5]
+	ra_diffs = np.diff(all_relative_angles)
+	dist_diffs = np.diff(all_distances)
+	ra_noise_mean = np.sqrt(((ra_diffs[::2] / 50)**2).mean())
+	ra_noise_std = (ra_diffs[::2] / 50).std()
+	dist_noise_mean = np.sqrt(((dist_diffs[::2] / all_distances[1::2])**2).mean())
+	dist_noise_std = (dist_diffs[::2] / all_distances[1::2]).std()
+	low_ra_noise_mean = None
+	low_ra_noise_std = None
+	low_dist_noise_mean = None
+	low_dist_noise_std = None
+
+	ra_noise_mean = 0.085725
+	ra_noise_std = 0.01988939056740697
+	dist_noise_mean = 0.020481468875000002
+	dist_noise_std = 0.009046682192463212
+	low_ra_noise_mean = 0.019316666666666666
+	low_ra_noise_std = 0.012071401333678297
+	low_dist_noise_mean = 0.004282976694444444
+	low_dist_noise_std = 0.00318725572998929
+	return ra_noise_mean, ra_noise_std, dist_noise_mean, dist_noise_std, low_dist_noise_mean, low_dist_noise_std, low_ra_noise_mean, low_ra_noise_std
+
+def boxplot2(path_lens):
+	df, colors, cmp = dict2df(path_lens)
+	sns.boxplot(
+		data=df[['K', 'N']].melt('fruit'),
+		x='fruit',
+		y='value',
+		hue='variable',
+		width=0.5,
+		order=['apple', 'mango', 'orange'],
+	)
+
+def dict2df2(d):
+	arr = []
+	cmp = None
+	colors = collections.defaultdict(list) 
+	#print("DICT:", json.dumps(d, sort_keys=True, indent=4))
+
+	for max_gen_degree in d:
+
+		N = len(d[max_gen_degree])
+		if not cmp:
+			cmp = mcp.gen_color(cmap="cool", n=N) #["#2C7BB6", '#D7191C', '#9cbd1a']
+			cmp = {x: c for x, c in zip(d[max_gen_degree].keys(), cmp)}
+		
+		i = 0
+		for num_nodes in d[max_gen_degree]:
+			for k in d[max_gen_degree][num_nodes]:
+				for val in d[max_gen_degree][num_nodes][k]:
+					arr.append([f"Max K = {max_gen_degree}", k - 2, num_nodes, val]) # f"Max K = {max_gen_degree}"
+				#colors[f"Max K = {max_gen_degree}"].append(cmp[num_nodes])
+			i += 1
+	
+	df = pd.DataFrame(arr, columns=["Max K", "K", "N", "%"]).sort_values(by=["Max K", "K", "N"])
+	x = df.groupby(["Max K", "K", "N"]).mean()
+	#idx = np.concatenate([x.index.get_level_values(1), x.index.get_level_values(2)], axis=1)
+	maxks = x.index.get_level_values(0)
+	ns = x.index.get_level_values(2)
+	
+	for maxk in maxks:
+		for n in ns:
+			colors[maxk].append(cmp[n])
+
+	return df, colors, cmp
+
 def dict2df(d):
 	cmp = None
 	colors = collections.defaultdict(list) 
+	#print("DICT:", json.dumps(d, sort_keys=True, indent=4))
 	dfs = {}
 	for max_gen_degree in d:
 		dfs[f"Max K = {max_gen_degree}"] = []
@@ -59,7 +128,68 @@ def dict2df(d):
 		dfs[f"Max K = {max_gen_degree}"] = pd.DataFrame(dfs[f"Max K = {max_gen_degree}"], columns=[f"K = {i}" for i in range(max_gen_degree + 1)] + ["N"])#.sort_values(by=["Max K", "K", "N"])
 	
 	return dfs 
+	x = df.groupby(["Max K", "K", "N"]).mean()
+	#idx = np.concatenate([x.index.get_level_values(1), x.index.get_level_values(2)], axis=1)
+	maxks = x.index.get_level_values(0)
+	ns = x.index.get_level_values(2)
 	
+	for maxk in maxks:
+		for n in ns:
+			colors[maxk].append(cmp[n])
+
+	return df, colors, cmp
+
+def set_box_color(bp, color):
+    plt.setp(bp['boxes'], color=color)
+    plt.setp(bp['whiskers'], color=color)
+    plt.setp(bp['caps'], color=color)
+    plt.setp(bp['medians'], color=color)
+
+def box_plot2(path_lens):
+	df, colors, cmp = dict2df2(path_lens)
+	
+	# df_long = pd.melt(df[df["Max K"] == 1], "N", var_name="K", value_name="%")
+	# sns.boxplot(x="K", hue="N", y="%", data=df_long)
+	# plt.plot()
+	# return
+
+	fig, ax1 = plt.subplots() #patch_artist=True, 
+	bp_dict = df.groupby('Max K').boxplot(ax=ax1, by=['K', "N"], return_type="both", patch_artist=True, layout=(1, len(path_lens)), figsize=(6,8), whiskerprops = dict(linestyle='--', linewidth=.5))
+
+	patches = []
+	for n, c in cmp.items():
+		patches.append(mpatches.Patch(color=c, label=f'N = {n}'))
+
+	for col, bp in bp_dict.items():
+		for b in bp.values:
+			# b.ax.set_xticks([])
+			# b.ax.xaxis.set_label_text('foo')
+			# b.ax.xaxis.label.set_visible(False)	
+			b.ax.yaxis.set_label_text("% of generated vectors out of all vectors")
+			
+			for patch in b.lines["whiskers"]:
+				patch.set_linestyle("dashed")
+				patch.set_linewidth(1)
+				# patch.set_color(colors[col][i])
+				# i += 2
+			
+			for patch, color in zip(b.lines["medians"], colors[col]):
+				patch.set_color("black")
+
+			for patch, color in zip(b.lines['boxes'], colors[col]):#for patch, color in zip(bp.values[0].lines['boxes'], colors):
+				patch.set_facecolor(color)
+				patch.set_edgecolor(color)
+				#patch.set_linestyle("dashed")
+			
+			b.ax.grid(b=True, which='both', axis='both', linestyle='-')
+			b.ax.legend(handles=patches)
+
+	ax1.grid(b=True, which='both', axis='both', linestyle='-')
+	ax1.set_title("Distribution of Generated Vectors by K")
+	ax1.set_ylabel("% of generated vectors")
+	fig.suptitle("Distribution of Generated Vectors by K")
+	plt.show()
+
 def box_plot(path_lens):
 	dfs = dict2df(path_lens)
 	for cat, df in dfs.items():
@@ -81,6 +211,7 @@ def bar_plot(data, x_labels, title, xa_label, ya_label, get_axis=False, separate
 	df = pd.DataFrame(data=data, index=x_labels)
 	if cols:
 		df = df[cols]
+	#print(df)
 	
 	ax = df.plot.bar(rot=15, title=title, colormap="cool", edgecolor="white")
 	ax.set(xlabel=xa_label, ylabel=ya_label)
@@ -100,66 +231,183 @@ def bar_plot(data, x_labels, title, xa_label, ya_label, get_axis=False, separate
 	else:
 		return ax
 
-def algs_barplot(d, title, ylabel):
-	df = pd.DataFrame(d)
-	df.set_index(['R', 'N'], inplace=True)
-	#df.plot.bar(rot=15, colormap="cool")
+def fixed_path_lengths(iters, num_nodess, path_lens, params): 
+	space_size = params["space_size"]
+	angle_noise = params["angle_noise"]
+	radius_noise = params["radius_noise"]
+	max_angle = params["max_angle"]
+	max_range = params["max_range"]
+	noise_ratio = params["noise_ratio"]
+	consider_orientation = params["consider_orientation"]
+	random_orientations = params["random_orientations"] 
+	num_anchors = params["num_anchors"]
+	sequential = params["sequential"] 
+	noise_trim = params["noise_trim"]
+	
+	# measured_rates = []
+	# inferred_rates = []
+	# measured_errors = []
+	# inferred_errors = []
 
-	# Create figure with a subplot for each factory zone with a relative width
-	# proportionate to the number of factories
-	zones = df.index.levels[0]
-	nplots = zones.size
-	plots_width_ratios = [df.xs(zone).index.size for zone in zones]
-	fig, axes = plt.subplots(nrows=1, ncols=nplots, sharey=True, figsize=(10, 4), gridspec_kw = dict(width_ratios=plots_width_ratios, wspace=0))
+	rates = {}
+	pos_errors = {}
 
-	if nplots == 1:
-		axes = [axes]
-	# Loop through array of axes to create grouped bar chart for each factory zone
-	alpha = 0.3 # used for grid lines, bottom spine and separation lines between zones
-	first = True 
-	for zone, ax in zip(zones, axes):
-		# Create bar chart with grid lines and no spines except bottom one
-		df.xs(zone).plot.bar(ax=ax, legend=None, zorder=2, colormap="cool", edgecolor="white")
-		#ax.grid(axis='y', zorder=1, color='black', alpha=alpha)
-		for spine in ['top', 'left', 'right']:
-			#ax.spines[spine].set_visible(False)
-			ax.spines[spine].set_alpha(alpha)
-		ax.spines['bottom'].set_alpha(alpha)
+	for n, num_nodes in enumerate(num_nodess):
+		print("Number of nodes:", num_nodes)
 		
-		# Set and place x labels for factory zones
-		ax.set_xlabel(zone)
-		ax.xaxis.set_label_coords(x=0.5, y=-0.2)
-		
-		# Format major tick labels for factory names: note that because this figure is
-		# only about 10 inches wide, I choose to rewrite the long names on two lines.
-		ticklabels = [name for name in df.xs(zone).index]
-		ax.set_xticklabels(ticklabels, rotation=0, ha='center')
-		ax.tick_params(axis='both', length=0, pad=7)
-		
-		# Set and format minor tick marks for separation lines between zones: note
-		# that except for the first subplot, only the right tick mark is drawn to avoid
-		# duplicate overlapping lines so that when an alpha different from 1 is chosen
-		# (like in this example) all the lines look the same
-		if ax.is_first_col():
-			ax.set_xticks([*ax.get_xlim()], minor=True)
-		else:
-			ax.set_xticks([ax.get_xlim()[1]], minor=True)
-		ax.tick_params(which='minor', length=100, width=0.8, color=[0, 0, 0, alpha])
-		ax.set_ylabel(ylabel)
+		for it in range(iters):
+			print(f"Iteration {it}")
+			# measured_rate = measured_error = 0
+			# inferred_rate = inferred_error = 0
 
-		if first:
-			ax.legend(loc="upper left", fontsize=15)
-			first = False
-	# Add legend using the labels and handles from the last subplot
-	#fig.legend(*ax.get_legend_handles_labels(), loc="upper left")
+			# dpl = collections.defaultdict(list)
+			true_nodes = vh.generate_random_nodes(num_nodes, space_size, num_anchors=num_anchors)
+			anchor_nodes = true_nodes[-num_anchors:]
+			true_vectors = vh.coords2vectors(true_nodes)
+			
+			# filter out vectors based on the ground truth
+			orientations = vh.get_orientations(true_nodes, space_size, random=random_orientations) if consider_orientation else None 
+			filtered = vm.drop_unseen_vectors(true_vectors, orientations, max_angle=max_angle, max_range=max_range, verbose=False)
+			#print("Detection rate after filtering unreachable nodes:", measured_rate)
 
-	fig.suptitle(title, size=20)
-	fig.tight_layout()
+			# inject noise into filtered vectors
+			measured = vm.inject_noise(filtered, noise_ratio, space_size, true_nodes, angle_noise, radius_noise, num_anchors=num_anchors)
+			
+			if not f"Measured vectors" in pos_errors:
+				pos_errors[f"Measured vectors"] = [0] * len(num_nodess)
+			
+			pos_errors[f"Measured vectors"][n] += vh.calculate_error(true_vectors, measured) / iters
+			
+			if not f"Measured vectors" in rates:
+				rates[f"Measured vectors"] = [0] * len(num_nodess)
+			
+			rates[f"Measured vectors"][n] += (1 - len(vh.get_missing(filtered)) / vh.vector_count(num_nodes, num_anchors)) / iters * 100
 
-	#plt.legend(loc="upper left")
-	plt.show()
+			for path_len in path_lens:
+				if path_len >= num_nodes - 1:
+					continue
+				params = Params(
+					num_nodes,
+					space_size,
+					num_anchors=num_anchors,
+					max_infer_components=num_nodes-1, 
+					max_gen_components=num_nodes-1, 
+					min_gen_degree=path_len-2,
+					max_gen_degree=path_len-2,
+					min_consistency_degree=1,
+					max_consistency_degree=2,
+					noise_trim=False,
+					max_range=max_range,
+					max_angle=max_angle,
+					enforce_inference=False
+				)
+				#print("Generation paths:", params.generation_paths)
+				vecgen = vg.VectorGenerator(params=params, verbose=False, sequential=sequential)
 
-# fixed P and different K
+				generated = vecgen.get_generated_vectors(measured)
+				
+				if not f"Generated vectors (K = {path_len - 2})" in pos_errors:
+					pos_errors[f"Generated vectors (K = {path_len - 2})"] = [0] * len(num_nodess)
+
+				pos_errors[f"Generated vectors (K = {path_len - 2})"][n] += vh.calculate_error(true_vectors, generated) / iters
+				
+				if not f"Generated vectors (K = {path_len - 2})" in rates:
+					rates[f"Generated vectors (K = {path_len - 2})"] = [0] * len(num_nodess)
+				
+				rates[f"Generated vectors (K = {path_len - 2})"][n] += (1 - len(vh.get_missing(generated)) / vh.vector_count(num_nodes, num_anchors)) / iters * 100
+
+			# measured_rates.append(measured_rate * 100)
+			# inferred_rates.append(inferred_rate * 100)
+			# measured_errors.append(measured_error)
+			# inferred_errors.append(inferred_error)
+
+	plt.tight_layout()
+	
+	bar_plot(pos_errors, num_nodess, "Fixed K vs Positioning Error", "Number of nodes", "Positioning error (m)", separate_legend=True)#, ylimits=POS_ERROR_LIMITS)
+	bar_plot(rates, num_nodess, "Fixed K vs Detection Rate", "Number of nodes", "Detection rate (%)", separate_legend=True, ylimits=DETECTION_RATE_LIMITS)
+
+def fixed_path_lengths2(iters, num_nodes, path_lens, params):
+	space_size = params["space_size"]
+	angle_noise = params["angle_noise"]
+	radius_noise = params["radius_noise"]
+	max_angle = params["max_angle"]
+	max_range = params["max_range"]
+	noise_ratio = params["noise_ratio"]
+	consider_orientation = params["consider_orientation"]
+	random_orientations = params["random_orientations"] 
+	num_anchors = params["num_anchors"]
+	sequential = params["sequential"] 
+	noise_trim = params["noise_trim"]
+	
+	measured_rates = []
+	inferred_rates = []
+	measured_errors = []
+	inferred_errors = []
+
+	for path_len in path_lens:
+		#print("Path length:", path_len)
+		measured_rate = inferred_rate = 0
+		measured_error = inferred_error = 0 
+		params = Params(
+			num_nodes,
+			space_size,
+			max_infer_components=num_nodes - 1, 
+			max_gen_components=num_nodes - 1, 
+			min_gen_degree=path_len - 2,
+			max_gen_degree=path_len - 2,
+			min_consistency_degree=1,
+			max_consistency_degree=2,
+			noise_trim=False,
+			max_range=max_range,
+			max_angle=max_angle,
+			enforce_inference=False
+		)
+		#print("Generation paths:", params.generation_paths)
+		vecgen = vg.VectorGenerator(params=params, verbose=False, sequential=sequential)
+
+		for it in range(iters):
+			print(f"Iteration {it}")
+			true_nodes = vh.generate_random_nodes(num_nodes, space_size, num_anchors=num_anchors)
+			true_vectors = vh.coords2vectors(true_nodes)
+
+			# filter out vectors based on the ground truth
+			orientations = vh.get_orientations(true_nodes, space_size, random=random_orientations) if consider_orientation else None 
+			filtered = vm.drop_unseen_vectors(true_vectors, orientations, max_angle=max_angle, max_range=max_range, verbose=False)
+			measured_rate += (1 - len(vh.get_missing(filtered)) / vh.vector_count(num_nodes, num_anchors)) / iters
+			#print("Detection rate after filtering unreachable nodes:", measured_rate)
+			
+			# inject noise into filtered vectors
+			measured = vm.inject_noise(filtered, noise_ratio, space_size, true_nodes, angle_noise, radius_noise, num_anchors=num_anchors)
+			
+			generated = vecgen.get_generated_vectors(measured)
+			inferred_rate += (1 - len(vh.get_missing(generated)) / vh.vector_count(num_nodes, num_anchors)) / iters
+	
+			measured_error += vh.calculate_error(true_vectors, measured) / iters
+			inferred_error += vh.calculate_error(true_vectors, generated) / iters
+			
+		measured_rates.append(measured_rate * 100)
+		inferred_rates.append(inferred_rate * 100)
+		measured_errors.append(measured_error)
+		inferred_errors.append(inferred_error)
+	
+	rates = {
+		"Measured vectors": measured_rates,
+		"Generated vectors": inferred_rates
+	}
+
+	pos_errors = {
+		"Measured vectors": measured_errors,
+		"Generated vectors": inferred_errors
+	}
+	
+	# bar_plot(num_nodess, rates, "Number of nodes", "Detection rates")
+	# bar_plot(num_nodess, pos_errors, "Number of nodes", "Positioning errors")
+	bar_plot(pos_errors, path_lens, "Path lengths vs Positioning Error", "Path length (fixed)", "Positioning error (m)", ylimits=POS_ERROR_LIMITS)
+	bar_plot(rates, path_lens, "Path lengths vs Detection Rate", "Path length (fixed)", "Detection rate (%)", ylimits=DETECTION_RATE_LIMITS)
+
+# this function explores detection rate (how many vectors are available) when orientations of terminals are pointing in random directions
+# it also explores how positioning error grows when generated vectors are used to generated other missing vectors sequentially
+# current results: error grows if sequential inference is used
 def cumulative_path_lengths(iters, num_nodess, max_gen_degrees, params): 
 	space_size = params["space_size"]
 	angle_noise = params["angle_noise"]
@@ -171,6 +419,12 @@ def cumulative_path_lengths(iters, num_nodess, max_gen_degrees, params):
 	random_orientations = params["random_orientations"] 
 	num_anchors = params["num_anchors"]
 	sequential = params["sequential"] 
+	noise_trim = params["noise_trim"]
+	
+	measured_rates = []
+	inferred_rates = []
+	measured_errors = []
+	inferred_errors = []
 
 	path_lens = collections.defaultdict(dict)
 	rates = {}
@@ -230,11 +484,13 @@ def cumulative_path_lengths(iters, num_nodess, max_gen_degrees, params):
 					max_angle=max_angle,
 					enforce_inference=False
 				)
-
+				#print("Generation paths:", params.generation_paths)
 				vecgen = vg.VectorGenerator(params=params, verbose=False, sequential=sequential)
 
-				inferred, inference_path_lengths = vecgen.infer_vectors(measured, generation_mode=True)
-
+				inferred, inference_path_lengths = vecgen.infer_vectors(measured, generation_mode=True) 
+				
+				#print(inference_path_lengths)
+				
 				for pl in inference_path_lengths:
 					if pl == 4:
 						print("K = 2!!!!", inference_path_lengths[pl], "out of", (num_nodes * (num_nodes - 1)))
@@ -251,12 +507,79 @@ def cumulative_path_lengths(iters, num_nodess, max_gen_degrees, params):
 				
 				rates[f"Generated vectors (Max K = {max_gen_degree})"][n] += (1 - len(vh.get_missing(inferred)) / vh.vector_count(num_nodes, num_anchors)) / iters * 100
 
+				# -----------------
+				# if it == 1 and num_nodes == num_nodess[1]:
+				# 	ov = vh.get_origin_vectors(true_vectors, anchor_nodes)
+				# 	plt.scatter(true_nodes[:, 0], true_nodes[:, 1], label="True nodes")
+				# 	plt.scatter(ov[:, 0], ov[:, 1], label="Origin vectors")
+				# 	plt.legend()
+				# 	plt.show()
+					
+				# 	ov = vh.get_origin_vectors(measured, anchor_nodes)
+				# 	plt.scatter(true_nodes[:, 0], true_nodes[:, 1], label="True nodes")
+				# 	plt.scatter(ov[:, 0], ov[:, 1], label="Origin vectors")
+				# 	plt.legend()
+				# 	plt.show()
+				# ------------------
+
+				#print("Detection rate after deducing missing vectors:", inferred_rate)
+				
+				# if it == 1 and num_nodes == num_nodess[0] and draw_vectors:
+				# 	vh.draw_vectors(space_size, true_nodes, true_vectors, "Unfiltered Actual", show=True, max_angle=max_angle, orientations=orientations)
+				# 	vh.draw_vectors(space_size, true_nodes, filtered, "Filtered Actual", show=True, max_angle=max_angle, orientations=orientations)
+				# 	vh.draw_vectors(space_size, true_nodes, measured, "Filtered Measured", show=True, max_angle=max_angle, orientations=orientations)
+				# 	vh.draw_vectors(space_size, true_nodes, inferred, "Deduced Measured", show=True, max_angle=max_angle, orientations=orientations)
+				# 	vh.draw_vectors(space_size, true_nodes, true_vectors, "Actual", show=True, max_angle=max_angle, orientations=orientations)
+				
+				# for pl in inference_path_lengths:
+				# 	if pl not in dpl:
+				# 		dpl[pl] = (inference_path_lengths[pl], 1)
+				# 	else:
+				# 		dpl[pl] = (dpl[pl][0] + inference_path_lengths[pl], dpl[pl][1] + 1)
+				
+			# measured_rates.append(measured_rate * 100)
+			# inferred_rates.append(inferred_rate * 100)
+			# measured_errors.append(measured_error)
+			# inferred_errors.append(inferred_error)
+			
+			#pl = sorted(list(dpl.keys()))
+
+			# plt.bar(pl, [dpl[p] for p in pl], label=f"Path lengths for inference (num_nodes = {num_nodes})")
+			# plt.xlabel("Path length")
+			# plt.ylabel("Number of vectors")
+			# plt.legend()
+			# plt.show()	
+
+			# path_lengths = {
+			# 	"Ratio of vectors generated": [dpl[p] for p in pl]
+			# }
+			
+			# bar_plot(pl, path_lengths, "Path length", "%% of vectors", title=f"Number of nodes - {num_nodes})")
+
+			# box plot 
+			
+		# plt.plot(num_nodess, measured_rates, label="filtered rate")
+		# plt.plot(num_nodess, inferred_rates, label="inferred rate")
+		# plt.legend()
+		# plt.show()
+
+		# plt.plot(num_nodess, measured_errors, label="measured error")
+		# plt.plot(num_nodess, inferred_errors, label="inferred error")
+		# plt.legend()
+		# plt.show()
+
+	# -------------------
+	# plt.title(f"% of Vectors vs Path Lengths for Vector Generation")
+	# plt.boxplot([dpl[p] for p in pl], labels=pl)
+	# plt.xlabel("Path length")
+	# plt.ylabel("% of vectors")
+	# plt.show()
+
 	plt.tight_layout()
 	box_plot(path_lens)
 	bar_plot(pos_errors, num_nodess, "Max K vs Positioning Error", "Number of nodes", "Positioning error (m)", separate_legend=True)#, ylimits=POS_ERROR_LIMITS)
 	bar_plot(rates, num_nodess, "Max K vs Detection Rate", "Number of nodes", "Detection rate (%)", separate_legend=True, ylimits=DETECTION_RATE_LIMITS)
 
-# different P
 def num_gen_components(iters, num_nodess, Ps, params, k_as_ratios=True):
 	space_size = params["space_size"]
 	angle_noise = params["angle_noise"]
@@ -269,6 +592,8 @@ def num_gen_components(iters, num_nodess, Ps, params, k_as_ratios=True):
 	num_anchors = params["num_anchors"]
 	sequential = params["sequential"] 
 	noise_trim = params["noise_trim"]
+	#rates = {}
+	pos_errors = {} #{"Measured errors": []}
 	ges = {"Measured vectors": [0] * len(num_nodess)}
 
 	for n, num_nodes in enumerate(num_nodess):
@@ -329,15 +654,96 @@ def num_gen_components(iters, num_nodess, Ps, params, k_as_ratios=True):
 			#measured_rate += fr * 100 / iters
 			measured_error += me / iters
 			
+		#rates[f"measured - {num_nodes}"] = measured_rates.copy()
+		#rates[f"N = {num_nodes}"] = gen_rates.copy()
+		#pos_errors[f"measured - {num_nodes}"] = measured_error.copy()
 		ges["Measured vectors"][n] = measured_error
 		for j, k in enumerate(Ps):
 			if k > num_nodes - 1:
 				continue
 			ges[f"P = {k if not k_as_ratios else k * 100}" if k != -1 else "Max P"][n] = gen_errors[j]
 		
+		#pos_errors["Measured errors"].append(measured_error)
+		
+	# rates = {
+	# 	"Measured vectors": measured_rates,
+	# 	"generated vectors": gen_rates
+	# }
+
+	# pos_errors = {
+	# 	"measured error": measured_errors,
+	# 	"generated error": gen_errors
+	# }
+
+	# bar_plot(rates, [k * 100 for k in Ps], f"Ratio of Vector Generation Components vs Detection Rate for N = {num_nodes}", "Ratio of Vector Generation Components (%)", "Detection rate (%)")
+	# bar_plot(pos_errors, [k * 100 for k in Ps], f"Ratio of Vector Generation Components vs Positioning Error for N = {num_nodes}", "Ratio of Vector Generation Components (%)", "Positioning error (m)")
+	
+	#ax = bar_plot(rates, [k * 100 for k in Ps], f"Ratio of Vector Generation Components vs Detection Rate", "Ratio of Vector Generation Components (%)", "Detection rate (%)")
+	#ax = bar_plot(pos_errors, [k * 100 for k in Ps], f"Ratio of Intermediate Generated Vectors vs Positioning Error", "Ratio of Intermediate Generated Vectors (%)", "Positioning error (m)")
 	bar_plot(ges, num_nodess, f"P vs Positioning Error", "Number of nodes", "Positioning error (m)", separate_legend=True, cols=["Measured vectors"] + ["Max P"] + [f"P = {k}" for k in [1, 2, 5, 10, 20]])#, ylimits=POS_ERROR_LIMITS)
 
-# positioning algorithms (HA + GA)
+def num_anchors():
+	pass
+
+def algs_barplot(d, title, ylabel):
+	df = pd.DataFrame(d)
+	df.set_index(['R', 'N'], inplace=True)
+	#df.plot.bar(rot=15, colormap="cool")
+
+	# Create figure with a subplot for each factory zone with a relative width
+	# proportionate to the number of factories
+	zones = df.index.levels[0]
+	nplots = zones.size
+	plots_width_ratios = [df.xs(zone).index.size for zone in zones]
+	fig, axes = plt.subplots(nrows=1, ncols=nplots, sharey=True, figsize=(10, 4), gridspec_kw = dict(width_ratios=plots_width_ratios, wspace=0))
+
+	if nplots == 1:
+		axes = [axes]
+	# Loop through array of axes to create grouped bar chart for each factory zone
+	alpha = 0.3 # used for grid lines, bottom spine and separation lines between zones
+	first = True 
+	for zone, ax in zip(zones, axes):
+		# Create bar chart with grid lines and no spines except bottom one
+		df.xs(zone).plot.bar(ax=ax, legend=None, zorder=2, colormap="cool", edgecolor="white")
+		#ax.grid(axis='y', zorder=1, color='black', alpha=alpha)
+		for spine in ['top', 'left', 'right']:
+			#ax.spines[spine].set_visible(False)
+			ax.spines[spine].set_alpha(alpha)
+		ax.spines['bottom'].set_alpha(alpha)
+		
+		# Set and place x labels for factory zones
+		ax.set_xlabel(zone)
+		ax.xaxis.set_label_coords(x=0.5, y=-0.2)
+		
+		# Format major tick labels for factory names: note that because this figure is
+		# only about 10 inches wide, I choose to rewrite the long names on two lines.
+		ticklabels = [name for name in df.xs(zone).index]
+		ax.set_xticklabels(ticklabels, rotation=0, ha='center')
+		ax.tick_params(axis='both', length=0, pad=7)
+		
+		# Set and format minor tick marks for separation lines between zones: note
+		# that except for the first subplot, only the right tick mark is drawn to avoid
+		# duplicate overlapping lines so that when an alpha different from 1 is chosen
+		# (like in this example) all the lines look the same
+		if ax.is_first_col():
+			ax.set_xticks([*ax.get_xlim()], minor=True)
+		else:
+			ax.set_xticks([ax.get_xlim()[1]], minor=True)
+		ax.tick_params(which='minor', length=100, width=0.8, color=[0, 0, 0, alpha])
+		ax.set_ylabel(ylabel)
+
+		if first:
+			ax.legend(loc="upper left", fontsize=15)
+			first = False
+	# Add legend using the labels and handles from the last subplot
+	#fig.legend(*ax.get_legend_handles_labels(), loc="upper left")
+
+	fig.suptitle(title, size=20)
+	fig.tight_layout()
+
+	#plt.legend(loc="upper left")
+	plt.show()
+
 def cmp_algs(iters, num_nodess, noise_ratios, params_, algs, draw_vectors=False, savefigs=False):
 	space_size = params_["space_size"]
 	angle_noise = params_["angle_noise"]
@@ -547,7 +953,7 @@ for param in params:
 	print(param, params[param])
 
 print("-" * 50)
-Ps = [1, 2, 5, 10, 20, -1]
+Ps = [1, 2, 5, 10, 20, -1]#[.1, .25, .5, .75, 1]
 iters = 10
 max_gen_degrees = [1, 2]
 path_lens = [3, 4, 5]
@@ -555,10 +961,10 @@ noise_ratios = [.3, .5, .7, .9]
 algs = ["HA", "GA"]
 matplotlib.rcParams.update({'font.size': 20})
 
-# uncomment one of the lines below to run the simulations
 cumulative_path_lengths(iters=iters, num_nodess=[5, 10, 30, 50], max_gen_degrees=max_gen_degrees, params=params)
-
+#fixed_path_lengths(iters=iters, num_nodess=[10, 20, 30], path_lens=path_lens, params=params)
 #num_gen_components(iters=iters, num_nodess=[5, 10, 30, 50], Ps=Ps, params=params, k_as_ratios=False)
 
+# 10, 20, 30
 #cmp_algs(iters=3, num_nodess=[10, 20, 30], noise_ratios=noise_ratios, params_=params, algs=algs, savefigs=True)#, draw_vectors=True)
 

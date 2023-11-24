@@ -79,6 +79,7 @@ def paths2dict(temp):
 	return paths
 
 def paths2len_dict(paths):
+	#print("Paths:", paths)
 	path_lens = {}
 	min_len = float('inf')
 	max_len = -1
@@ -106,6 +107,7 @@ def get_magnitude(vector):
 	return np.sqrt(np.sum(vector**2))
 
 def generate_paths(num_points, min_degree=1, max_degree=1):
+	#print("Num points:", num_points, "min:", min_degree, "max:", max_degree)
 	max_degree = min(max_degree + 1, num_points - 2)
 	min_degree = max(min_degree, 1)
 		
@@ -117,6 +119,7 @@ def generate_paths(num_points, min_degree=1, max_degree=1):
 		start, end = pair
 
 		for length in range(min_degree, max_degree):
+			#print("Exploring length", length)
 			middle_perms = list(permutations(full_middle_path, length))
 			for middle_perm in middle_perms:
 				paths.append((start, *middle_perm, end))
@@ -212,9 +215,11 @@ def generate_paths_of_length(num_points, length):
 def path_to_pairs(path):
 	if path[0] == path[-1]:
 		raise Exception("Wrong path")
+	#print(path)
 	pairs = []
 	for i in range(1, len(path)):
 		pairs.append((path[i - 1], path[i]))
+	#print(pairs)
 	return pairs
 
 def scatter_locations(space_size, coords, vectors, title):
@@ -284,16 +289,27 @@ def vecs2coords(vectors, space_size, pivot=0):
 			coords[i] = vectors[pivot][i]
 		else:
 			for j in range(len(vectors)):
-				if j != i and j != pivot and not is_missing(vectors[pivot][j]) and not is_missing(vectors[j][i]):
-					coords[i] = vectors[pivot][j] + vectors[j][i]
-					break
-	gm = np.min(coords)
-	if gm < 0:
-		coords = coords - gm
+				if j != i and j != pivot:
+					if not is_missing(vectors[pivot][j]) and not is_missing(vectors[j][i]):
+						coords[i] = vectors[pivot][j] + vectors[j][i]
+						break
+					elif not is_missing(vectors[pivot][j]) and not is_missing(vectors[i][j]):
+						coords[i] = vectors[pivot][j] - vectors[i][j]
+						break
+					elif not is_missing(vectors[j][pivot]) and not is_missing(vectors[i][j]):
+						coords[i] = -(vectors[i][j] + vectors[j][pivot])
+						break
+					elif not is_missing(vectors[j][pivot]) and not is_missing(vectors[j][i]):
+						coords[i] = -vectors[j][pivot] + vectors[j][i]
+						break
 	
-	if len(coords[coords > space_size]) > 0:
-		coords[coords > space_size] = space_size
-	coords[coords < 0] = 0
+	# gm = np.min(coords)
+	# if gm < 0:
+	# 	coords = coords - gm
+	
+	# if len(coords[coords > space_size]) > 0:
+	# 	coords[coords > space_size] = space_size
+	#coords[coords < 0] = 0
 	return coords
 
 def get_empty_vec_matrix(num_nodes):
@@ -334,5 +350,101 @@ def cartesian2polar(vectors):
 				theta = math.acos(node[0] / r)
 				if node[1] < 0:
 					theta *= -1
+				#theta = arctan(node[0], node[1]) # np.arctan2(node[1], node[0])
 				polar[i][j] = np.array([r, theta])
 	return polar
+
+def polar2cartesian(vectors):
+	polar = get_empty_vec_matrix(len(vectors))
+	for i in range(len(vectors)):
+		for j in range(len(vectors)):
+			if i != j and not is_missing(vectors[i][j]):
+				r, theta = vectors[i][j]
+				polar[i][j] = np.array([r * np.cos(theta), r * np.sin(theta)])
+	return polar
+
+def vecs2sparse(vecs):
+    idx = [[], []]
+    vals = []
+    feats = []
+    for i in range(len(vecs)):
+        for j in range(len(vecs)):
+            if i != j and not is_missing(vecs[i][j]):
+                idx[0].append(i)
+                idx[1].append(j)
+                vals.append(1)
+                feats.append(vecs[i][j])
+    return np.array(idx), np.array(feats)
+
+def sparse2vecs(sparse, edge_index, num_nodes):
+    vectors = get_empty_vec_matrix(num_nodes)
+    for k in range(edge_index.shape[1]):
+        i, j = edge_index[0][k], edge_index[1][k]
+        vectors[i][j] = sparse[k].copy()
+    return vectors
+
+def arctan2(x, y):
+	if x > 0:
+		return np.arctan(y / x)
+	if x < 0 and y >= 0:
+		return np.arctan(y / x) + np.pi
+	if x < 0 and y < 0:
+		return np.arctan(y / x) - np.pi
+	if x == 0 and y > 0:
+		return np.pi / 2
+	if x == 0 and y < 0:
+		return -np.pi / 2
+	return 0
+
+def arctan(x, y):
+	if x > 0 and y > 0:
+		return np.arctan(y / x)
+	if x > 0 and y < 0:
+		return np.arctan(y / x) + 2 * np.pi 
+	if x < 0:
+		return np.arctan(y / x) + np.pi 
+	if x == 0 and y > 0:
+		return np.pi / 2
+	if x == 0 and y < 0:
+		return -1.5 * np.pi 
+	return 0
+
+if __name__ == "__main__":
+	import vec_manipulator as vm
+	true_coords = np.array(generate_random_nodes(10, 30, num_anchors=0))
+	true_vectors = coords2vectors(true_coords)
+	orientations = get_orientations(true_coords, 30, random=True)
+	true_vectors = vm.drop_unseen_vectors(true_vectors, orientations=orientations, max_angle=50)
+	space_size = 30
+	true_coords = vecs2coords(true_vectors, 30) # always get coordinates from node 0's perspective
+
+	filtered = vm.drop_unseen_vectors(true_vectors, orientations, max_angle=50, max_range=40, verbose=False)
+
+	# inject noise into filtered vectors
+	measured_vectors = []
+	noisy_coordss = []
+	for _ in range(15):
+		measured = vm.inject_noise(filtered, 1, space_size, true_coords, .2, .2, num_anchors=0)
+
+		#noisy_coords = np.array([vm.add_noise(node, space_size, radius_noise, angle_noise) for node in true_coords])
+		#noisy_coords = vecs2coords(measured, space_size) #/ space_size
+		measured_vectors.append(cartesian2polar(measured))
+		#noisy_coordss.append(copy.deepcopy(noisy_coords))
+
+	# noisy_coords = np.concatenate(noisy_coordss, axis=-1)
+	# noisy_coords = np.mean(noisy_coords.reshape(noisy_coords.shape[0], -1, 2), axis=1)
+
+	measured = np.concatenate(measured_vectors, axis=-1)
+	measured = np.mean(measured.reshape(measured.shape[0], measured.shape[1], -1, 2), axis=-2)
+
+	print("vectors:", beautify_matrix(measured))
+	print("converted:", beautify_matrix(cartesian2polar(polar2cartesian(measured))))
+	
+	edge_index, edge_attr = vecs2sparse(measured)
+	from_sparse = sparse2vecs(edge_attr, edge_index, len(true_coords))
+	print("from sparse:", beautify_matrix(from_sparse))
+
+	print("vectors from coords:", beautify_matrix(cartesian2polar(coords2vectors(vecs2coords(measured, space_size)))))
+
+	print("True coordinates:", true_coords, "coords from vectors:", vecs2coords(true_vectors, space_size))
+	print("Noisy coordinates:", vecs2coords(polar2cartesian(measured), space_size), "coords from vectors:", vecs2coords(coords2vectors(vecs2coords(polar2cartesian(measured), space_size)), space_size))

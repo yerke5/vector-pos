@@ -179,6 +179,7 @@ class GA:
 						di = self.calculate_di(child)
 
 						if di is not None:
+							#print("Adding child!", 1 / di if di != 0 else float('inf'))
 							offspring.append(child)
 							population_fitness[len(offspring) - 1] = 1 / di if di != 0 else float('inf')
 
@@ -187,9 +188,15 @@ class GA:
 					
 			k += 1
 
+		# if len(offspring) > len(selection):
+		# 	offspring = offspring[:len(selection)]
+		# 	population_fitness = population_fitness[:len(selection)]
+		
 		return offspring, sorted(population_fitness.items(), key=operator.itemgetter(1), reverse=True)
 
 	def crossover2(self, p1, p2, perfect_genes1, perfect_genes2):
+		# print("Perfect genes 1:", perfect_genes1)
+		# print("Perfect genes 2:", perfect_genes2)
 		if random.random() < self.crossover_rate:
 			i1 = set(vh.matrix2indices(p1))
 			i2 = set(vh.matrix2indices(p2))
@@ -202,6 +209,12 @@ class GA:
 			
 			if not i2:
 				return [copy.deepcopy(p1), copy.deepcopy(p1)]
+			
+			# if not i1 or not i2:
+			# 	# print(i1)
+			# 	# print(i2)
+			# 	# raise Exception("Found empty chromosomes; something went wrong")
+			# 	return []
 			
 			v1 = list(i1 - set(perfect_genes1))
 			v2 = list(i2 - set(perfect_genes2))
@@ -254,6 +267,28 @@ class GA:
 			return [child1, child2]
 		return [p1, p2]
 	
+	def crossover(self, p1, p2, perfect_genes1, perfect_genes2, delta=1e-6):
+		if random.random() < self.crossover_rate:
+			i1 = set(vh.matrix2indices(p1))
+			i2 = set(vh.matrix2indices(p2))
+
+			if not i1 or not i2:
+				raise Exception("Found empty chromosomes; something went wrong")
+			
+			v1 = list(i1 - set(perfect_genes1))
+			v2 = list(i2 - set(perfect_genes2))
+
+			if not v1 and not v2:
+				return [p1, p2]
+
+			gp2 = self.vector_generator.get_generated_vectors(p2)
+			for (pi, pj) in perfect_genes1:
+				for i in range(len(p1)):
+					if np.sum(((p1[pi][pj] + gp2[pj][i]) - p1[pi][i]))**2 <= delta:
+						pass
+			#return [child1, child2]
+		return [p1, p2]
+
 	def mutation6(self, individual):
 		if self.vector_generator.params.consistency_paths is None:
 			raise Exception("Consistency paths not passed for mutation of specified type")
@@ -379,6 +414,22 @@ class GA:
 			print('[INFO] Calculating population fitness')
 			
 			if best_individual is None or (population_fitness[0][1] > 0 and 1 / population_fitness[0][1] < (1 / best_fitness if best_fitness > 0 else float('inf'))):
+				# ---- based on inference ---
+				# res = self.vector_generator.infer_vectors(population[population_fitness[0][0]]) #self.vector_generator.get_inferrable_vectors(population[population_fitness[0][0]], coverage=None) 
+
+				# if res is None:
+				# 	if not self.vector_generator.params.enforce_inference:
+				# 		print('[WARNING] Since deduction was not enforced, some vectors will be missing')
+				# 	else:
+				# 		raise Exception('Violation of enforcing deduction detected, which means that something went wrong')
+				# else:
+				# 	best_individual, mrpl = res
+				# 	best_fitness = population_fitness[0][1]
+
+				# 	if true_vectors is not None:
+				# 		best_error = vh.calculate_error(best_individual, true_vectors)
+				# ---- end based on inference ------
+
 				best_individual = self.vector_generator.get_generated_vectors(population[population_fitness[0][0]])
 				nnv = self.vector_generator.get_negative_vectors(best_individual)
 				best_fitness = population_fitness[0][1]
@@ -402,6 +453,7 @@ class GA:
 
 			print('[INFO] Generating offspring...')
 			population, population_fitness = self.generate_offspring(selection)
+			#print("Fitness:", population_fitness)
 
 			if len(population) == 0:
 				raise Exception('Unable to generate offspring')
